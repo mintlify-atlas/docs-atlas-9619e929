@@ -1,0 +1,478 @@
+---
+title: "PostgreSQL with pgvector"
+description: "PostgreSQL vector search with pgvector extension"
+icon: "database"
+---
+
+## Overview
+
+PGVectorStore provides vector storage and similarity search using PostgreSQL with the pgvector extension. It supports multiple PostgreSQL client libraries and advanced filtering.
+
+## Installation
+
+```bash
+npm install @llamaindex/postgres pg pgvector
+```
+
+## Basic Usage
+
+```typescript
+import { PGVectorStore } from "@llamaindex/postgres";
+import { VectorStoreIndex, Document } from "llamaindex";
+
+const vectorStore = new PGVectorStore({
+  clientConfig: {
+    host: "localhost",
+    port: 5432,
+    database: "vectordb",
+    user: "postgres",
+    password: "password"
+  }
+});
+
+const documents = [
+  new Document({ text: "LlamaIndex is a data framework." }),
+  new Document({ text: "PostgreSQL is a relational database." })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+const queryEngine = index.asQueryEngine();
+const response = await queryEngine.query({
+  query: "What is PostgreSQL?"
+});
+```
+
+## Constructor Options
+
+### Using Client Configuration
+
+<ParamField path="clientConfig" type="pg.ClientConfig">
+  PostgreSQL client configuration object. See [node-postgres documentation](https://node-postgres.com/apis/client#new-client)
+</ParamField>
+
+### Using Existing Client
+
+<ParamField path="client" type="pg.Client | pg.PoolClient | Sql | VercelPool">
+  Existing PostgreSQL client instance (pg, postgres, or @vercel/postgres)
+</ParamField>
+
+<ParamField path="shouldConnect" type="boolean">
+  Whether to connect the client. Set to `false` if already connected
+</ParamField>
+
+### Common Options
+
+<ParamField path="schemaName" type="string" default="public">
+  PostgreSQL schema name
+</ParamField>
+
+<ParamField path="tableName" type="string" default="llamaindex_embedding">
+  Table name for storing vectors
+</ParamField>
+
+<ParamField path="dimensions" type="number" default={1536}>
+  Vector dimensions (must match embedding model)
+</ParamField>
+
+<ParamField path="performSetup" type="boolean" default={true}>
+  Automatically create schema, table, and indexes
+</ParamField>
+
+## Supported PostgreSQL Clients
+
+### node-postgres (pg)
+
+```typescript
+import { PGVectorStore } from "@llamaindex/postgres";
+import pg from "pg";
+
+const vectorStore = new PGVectorStore({
+  clientConfig: {
+    host: "localhost",
+    port: 5432,
+    database: "vectordb",
+    user: "postgres",
+    password: "password"
+  }
+});
+```
+
+### postgres
+
+```typescript
+import postgres from "postgres";
+import { PGVectorStore } from "@llamaindex/postgres";
+
+const sql = postgres({
+  host: "localhost",
+  port: 5432,
+  database: "vectordb",
+  user: "postgres",
+  password: "password"
+});
+
+const vectorStore = new PGVectorStore({
+  client: sql,
+  shouldConnect: false
+});
+```
+
+### @vercel/postgres
+
+```typescript
+import { sql } from "@vercel/postgres";
+import { PGVectorStore } from "@llamaindex/postgres";
+
+const vectorStore = new PGVectorStore({
+  client: sql,
+  shouldConnect: false
+});
+```
+
+## Database Setup
+
+### Install pgvector Extension
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+The vector store will automatically:
+- Create the schema if it doesn't exist
+- Create the table with appropriate columns
+- Create indexes on external_id and collection
+
+### Manual Table Creation
+
+```sql
+CREATE TABLE IF NOT EXISTS public.llamaindex_embedding (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  external_id VARCHAR,
+  collection VARCHAR,
+  document TEXT,
+  metadata JSONB DEFAULT '{}',
+  embeddings VECTOR(1536)
+);
+
+CREATE INDEX idx_llamaindex_embedding_external_id ON public.llamaindex_embedding (external_id);
+CREATE INDEX idx_llamaindex_embedding_collection ON public.llamaindex_embedding (collection);
+```
+
+## Collections
+
+Organize vectors using collections:
+
+```typescript
+const vectorStore = new PGVectorStore({
+  clientConfig: { /* ... */ }
+});
+
+// Set collection
+vectorStore.setCollection("my-collection");
+
+// Get current collection
+const collection = vectorStore.getCollection();
+
+// Add documents to this collection
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+// Clear specific collection
+await vectorStore.clearCollection();
+```
+
+## Querying
+
+### Basic Query
+
+```typescript
+const index = await VectorStoreIndex.fromVectorStore(vectorStore);
+
+const retriever = index.asRetriever({
+  similarityTopK: 5
+});
+
+const nodes = await retriever.retrieve("query text");
+
+nodes.forEach(node => {
+  console.log(`Score: ${node.score}`);
+  console.log(`Text: ${node.node.text}`);
+});
+```
+
+### Metadata Filtering
+
+```typescript
+import { MetadataFilters, FilterCondition, FilterOperator } from "@llamaindex/core/vector-store";
+
+const documents = [
+  new Document({
+    text: "Doc 1",
+    metadata: { category: "tech", year: 2023, tags: ["ai", "ml"] }
+  }),
+  new Document({
+    text: "Doc 2",
+    metadata: { category: "science", year: 2024 }
+  })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+const retriever = index.asRetriever({
+  filters: new MetadataFilters({
+    filters: [
+      { key: "category", value: "tech", operator: FilterOperator.EQ },
+      { key: "year", value: 2023, operator: FilterOperator.GTE }
+    ],
+    condition: FilterCondition.AND
+  })
+});
+
+const nodes = await retriever.retrieve("query");
+```
+
+## Supported Filter Operators
+
+PGVectorStore supports extensive filtering:
+
+- `EQ` (`=`) - Equal
+- `NE` (`!=`) - Not equal
+- `GT` (`>`) - Greater than
+- `GTE` (`>=`) - Greater than or equal
+- `LT` (`<`) - Less than
+- `LTE` (`<=`) - Less than or equal
+- `IN` (`= ANY`) - Value in array
+- `NIN` (`!= ANY`) - Value not in array
+- `CONTAINS` (`@>`) - JSONB contains
+- `ANY` (`?|`) - Any of the array elements exist
+- `ALL` (`?&`) - All of the array elements exist
+- `IS_EMPTY` - Field is null or empty
+- `TEXT_MATCH` - Text pattern matching (LIKE)
+
+### Advanced Filtering Examples
+
+```typescript
+// Array contains
+const retriever1 = index.asRetriever({
+  filters: new MetadataFilters({
+    filters: [
+      { key: "tags", value: "ai", operator: FilterOperator.CONTAINS }
+    ]
+  })
+});
+
+// Array ANY
+const retriever2 = index.asRetriever({
+  filters: new MetadataFilters({
+    filters: [
+      { key: "tags", value: ["ai", "ml"], operator: FilterOperator.ANY }
+    ]
+  })
+});
+
+// Text match
+const retriever3 = index.asRetriever({
+  filters: new MetadataFilters({
+    filters: [
+      { key: "title", value: "database", operator: FilterOperator.TEXT_MATCH }
+    ]
+  })
+});
+
+// Is empty
+const retriever4 = index.asRetriever({
+  filters: new MetadataFilters({
+    filters: [
+      { key: "description", operator: FilterOperator.IS_EMPTY }
+    ]
+  })
+});
+```
+
+## Managing Data
+
+### Add Documents
+
+```typescript
+const newDoc = new Document({ text: "New content" });
+await index.insert(newDoc);
+```
+
+### Delete by Document ID
+
+```typescript
+await vectorStore.delete(refDocId);
+```
+
+### Access Database Client
+
+```typescript
+const db = await vectorStore.client();
+
+// Perform custom queries
+const results = await db.query(
+  "SELECT COUNT(*) FROM llamaindex_embedding WHERE collection = $1",
+  ["my-collection"]
+);
+console.log("Total documents:", results[0].count);
+```
+
+## Complete Example
+
+```typescript
+import { PGVectorStore } from "@llamaindex/postgres";
+import { VectorStoreIndex, Document, Settings } from "llamaindex";
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+
+// Configure settings
+Settings.llm = new OpenAI({ model: "gpt-4" });
+Settings.embedModel = new OpenAIEmbedding();
+
+// Create vector store
+const vectorStore = new PGVectorStore({
+  clientConfig: {
+    host: process.env.POSTGRES_HOST,
+    port: 5432,
+    database: "llamaindex",
+    user: process.env.POSTGRES_USER,
+    password: process.env.POSTGRES_PASSWORD
+  },
+  schemaName: "public",
+  tableName: "documents",
+  dimensions: 1536
+});
+
+// Set collection
+vectorStore.setCollection("technical-docs");
+
+// Load documents
+const documents = [
+  new Document({
+    text: "PostgreSQL with pgvector provides vector search...",
+    metadata: { source: "docs", category: "database" }
+  }),
+  new Document({
+    text: "LlamaIndex integrates with PostgreSQL...",
+    metadata: { source: "tutorial", category: "integration" }
+  })
+];
+
+// Build index
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+// Query with filters
+const retriever = index.asRetriever({
+  similarityTopK: 3,
+  filters: new MetadataFilters({
+    filters: [
+      { key: "category", value: "database", operator: FilterOperator.EQ }
+    ]
+  })
+});
+
+const nodes = await retriever.retrieve("vector search");
+console.log(nodes);
+```
+
+## Distance Metrics
+
+PGVectorStore uses cosine distance (`<=>`) by default. PostgreSQL with pgvector supports:
+
+- `<=>` - Cosine distance
+- `<->` - L2 distance (Euclidean)
+- `<#>` - Inner product
+
+## Performance Optimization
+
+### Indexing
+
+For better performance on large datasets, consider adding vector indexes:
+
+```sql
+-- IVFFlat index
+CREATE INDEX ON llamaindex_embedding 
+USING ivfflat (embeddings vector_cosine_ops)
+WITH (lists = 100);
+
+-- HNSW index (pgvector 0.5.0+)
+CREATE INDEX ON llamaindex_embedding 
+USING hnsw (embeddings vector_cosine_ops);
+```
+
+### Connection Pooling
+
+```typescript
+import pg from "pg";
+
+const pool = new pg.Pool({
+  host: "localhost",
+  port: 5432,
+  database: "vectordb",
+  user: "postgres",
+  password: "password",
+  max: 20,
+  idleTimeoutMillis: 30000
+});
+
+const client = await pool.connect();
+
+const vectorStore = new PGVectorStore({
+  client,
+  shouldConnect: false
+});
+```
+
+## Best Practices
+
+1. **Use connection pooling**: Reuse database connections
+2. **Match dimensions**: Ensure vector dimensions match embedding model
+3. **Create indexes**: Add HNSW or IVFFlat indexes for large datasets
+4. **Use collections**: Organize data by collection for easy management
+5. **Monitor performance**: Track query performance and optimize
+6. **Regular maintenance**: Run VACUUM and ANALYZE on tables
+
+## Troubleshooting
+
+### pgvector Extension Not Found
+
+```sql
+-- Install pgvector extension
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Verify installation
+SELECT * FROM pg_extension WHERE extname = 'vector';
+```
+
+### Dimension Mismatch
+
+Ensure embedding dimensions match:
+
+```typescript
+import { OpenAIEmbedding } from "@llamaindex/openai";
+
+// text-embedding-3-small: 1536 dimensions
+const embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-small"
+});
+
+// PostgreSQL table must match
+const vectorStore = new PGVectorStore({
+  clientConfig: { /* ... */ },
+  dimensions: 1536
+});
+```
+
+## See Also
+
+- [pgvector Documentation](https://github.com/pgvector/pgvector)
+- [node-postgres Documentation](https://node-postgres.com/)
+- [Vector Store Index](/api/llamaindex/indices)
+- [Core Schema](/api/core/schema)

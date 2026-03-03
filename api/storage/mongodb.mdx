@@ -1,0 +1,377 @@
+---
+title: "MongoDB Atlas Vector Search"
+description: "MongoDB Atlas vector search integration"
+icon: "database"
+---
+
+## Overview
+
+MongoDB Atlas Vector Search provides native vector search capabilities within MongoDB Atlas, combining document storage with vector similarity search.
+
+## Installation
+
+```bash
+npm install @llamaindex/mongodb mongodb
+```
+
+## Basic Usage
+
+```typescript
+import { MongoDBAtlasVectorSearch } from "@llamaindex/mongodb";
+import { VectorStoreIndex, Document } from "llamaindex";
+
+const vectorStore = new MongoDBAtlasVectorSearch({
+  dbName: "my_database",
+  collectionName: "embeddings"
+});
+
+const documents = [
+  new Document({ text: "LlamaIndex is a data framework." }),
+  new Document({ text: "MongoDB is a document database." })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+const queryEngine = index.asQueryEngine();
+const response = await queryEngine.query({
+  query: "What is MongoDB?"
+});
+```
+
+## Constructor Options
+
+<ParamField path="dbName" type="string" required>
+  MongoDB database name
+</ParamField>
+
+<ParamField path="collectionName" type="string" required>
+  MongoDB collection name for storing vectors
+</ParamField>
+
+<ParamField path="mongodbClient" type="MongoClient">
+  MongoDB client instance. If not provided, creates client using `MONGODB_URI` env var
+</ParamField>
+
+<ParamField path="indexName" type="string" default="default">
+  Name of the vector search index
+</ParamField>
+
+<ParamField path="embeddingKey" type="string" default="embedding">
+  Field name for storing embedding vectors
+</ParamField>
+
+<ParamField path="textKey" type="string" default="text">
+  Field name for storing text content
+</ParamField>
+
+<ParamField path="idKey" type="string" default="id">
+  Field name for storing node IDs
+</ParamField>
+
+<ParamField path="metadataKey" type="string" default="metadata">
+  Field name for storing metadata
+</ParamField>
+
+<ParamField path="autoCreateIndex" type="boolean" default={true}>
+  Automatically create vector search index if it doesn't exist
+</ParamField>
+
+<ParamField path="indexedMetadataFields" type="string[]" default={[]}>
+  List of metadata fields to index for filtering
+</ParamField>
+
+<ParamField path="embeddingDefinition" type="object">
+  Custom embedding configuration. Default: `{type: "knnVector", dimensions: 1536, similarity: "cosine"}`
+</ParamField>
+
+<ParamField path="numCandidates" type="(query) => number">
+  Function to determine number of candidates for search. Default: `similarityTopK * 10`
+</ParamField>
+
+## Configuration
+
+### Environment Variables
+
+```bash
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/
+```
+
+### With Custom Client
+
+```typescript
+import { MongoClient } from "mongodb";
+import { MongoDBAtlasVectorSearch } from "@llamaindex/mongodb";
+
+const client = new MongoClient("mongodb+srv://...");
+await client.connect();
+
+const vectorStore = new MongoDBAtlasVectorSearch({
+  mongodbClient: client,
+  dbName: "my_database",
+  collectionName: "embeddings"
+});
+```
+
+## Setting Up MongoDB Atlas
+
+### Create Atlas Search Index
+
+1. Go to your MongoDB Atlas cluster
+2. Navigate to the "Search" tab
+3. Click "Create Search Index"
+4. Use JSON editor and configure:
+
+```json
+{
+  "mappings": {
+    "dynamic": true,
+    "fields": {
+      "embedding": {
+        "type": "knnVector",
+        "dimensions": 1536,
+        "similarity": "cosine"
+      }
+    }
+  }
+}
+```
+
+Or let the vector store auto-create the index:
+
+```typescript
+const vectorStore = new MongoDBAtlasVectorSearch({
+  dbName: "my_database",
+  collectionName: "embeddings",
+  autoCreateIndex: true,  // Creates index automatically
+  embeddingDefinition: {
+    type: "knnVector",
+    dimensions: 1536,
+    similarity: "cosine"
+  }
+});
+```
+
+## Querying
+
+### Basic Query
+
+```typescript
+const index = await VectorStoreIndex.fromVectorStore(vectorStore);
+
+const retriever = index.asRetriever({
+  similarityTopK: 5
+});
+
+const nodes = await retriever.retrieve("query text");
+
+nodes.forEach(node => {
+  console.log(`Score: ${node.score}`);
+  console.log(`Text: ${node.node.text}`);
+});
+```
+
+### Metadata Filtering
+
+```typescript
+import { MetadataFilters, FilterCondition } from "@llamaindex/core/vector-store";
+
+const vectorStore = new MongoDBAtlasVectorSearch({
+  dbName: "my_database",
+  collectionName: "embeddings",
+  indexedMetadataFields: ["category", "year"]  // Index these fields
+});
+
+const documents = [
+  new Document({
+    text: "Doc 1",
+    metadata: { category: "tech", year: 2023 }
+  }),
+  new Document({
+    text: "Doc 2",
+    metadata: { category: "science", year: 2024 }
+  })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+const retriever = index.asRetriever({
+  filters: new MetadataFilters({
+    filters: [
+      { key: "category", value: "tech", operator: "==" },
+      { key: "year", value: 2023, operator: ">=" }
+    ],
+    condition: FilterCondition.AND
+  })
+});
+
+const nodes = await retriever.retrieve("query");
+```
+
+## Supported Filter Operators
+
+MongoDB Atlas Vector Search supports:
+
+- `==` - Equal
+- `!=` - Not equal
+- `<` - Less than
+- `<=` - Less than or equal
+- `>` - Greater than
+- `>=` - Greater than or equal
+- `in` - Value in array
+- `nin` - Value not in array
+
+## Managing Data
+
+### Add Documents
+
+```typescript
+const newDoc = new Document({ text: "New content" });
+await index.insert(newDoc);
+```
+
+### Delete by Document ID
+
+```typescript
+await vectorStore.delete(refDocId);
+```
+
+### Access MongoDB Client
+
+```typescript
+const client = vectorStore.client();
+const collection = await vectorStore.ensureCollection();
+
+// Perform MongoDB operations
+const count = await collection.countDocuments();
+console.log("Total documents:", count);
+```
+
+## Advanced Configuration
+
+### Custom Number of Candidates
+
+```typescript
+const vectorStore = new MongoDBAtlasVectorSearch({
+  dbName: "my_database",
+  collectionName: "embeddings",
+  numCandidates: (query) => query.similarityTopK * 20  // More candidates
+});
+```
+
+### Multiple Indexed Metadata Fields
+
+```typescript
+const vectorStore = new MongoDBAtlasVectorSearch({
+  dbName: "my_database",
+  collectionName: "embeddings",
+  indexedMetadataFields: ["category", "author", "tags", "date"],
+  autoCreateIndex: true
+});
+```
+
+## Complete Example
+
+```typescript
+import { MongoDBAtlasVectorSearch } from "@llamaindex/mongodb";
+import { VectorStoreIndex, Document, Settings } from "llamaindex";
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+
+// Configure settings
+Settings.llm = new OpenAI({ model: "gpt-4" });
+Settings.embedModel = new OpenAIEmbedding();
+
+// Create vector store
+const vectorStore = new MongoDBAtlasVectorSearch({
+  dbName: "llamaindex_db",
+  collectionName: "documents",
+  indexName: "vector_index",
+  indexedMetadataFields: ["source", "category"],
+  autoCreateIndex: true
+});
+
+// Load documents
+const documents = [
+  new Document({
+    text: "MongoDB Atlas provides vector search...",
+    metadata: { source: "docs", category: "database" }
+  }),
+  new Document({
+    text: "LlamaIndex integrates with MongoDB...",
+    metadata: { source: "tutorial", category: "integration" }
+  })
+];
+
+// Build index
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+// Query with filters
+const retriever = index.asRetriever({
+  similarityTopK: 3,
+  filters: new MetadataFilters({
+    filters: [{ key: "category", value: "database", operator: "==" }]
+  })
+});
+
+const nodes = await retriever.retrieve("vector search");
+console.log(nodes);
+```
+
+## Best Practices
+
+1. **Index metadata fields**: Only index fields you'll filter on
+2. **Match dimensions**: Ensure embedding dimensions match your model
+3. **Use auto-create**: Let the store manage index creation
+4. **Tune candidates**: Adjust `numCandidates` for performance vs accuracy
+5. **Monitor costs**: Track Atlas usage and storage
+6. **Use connection pooling**: Reuse MongoDB client instances
+
+## Troubleshooting
+
+### Index Not Found
+
+If you see errors about missing index:
+
+```typescript
+// Enable auto-create
+const vectorStore = new MongoDBAtlasVectorSearch({
+  dbName: "my_database",
+  collectionName: "embeddings",
+  autoCreateIndex: true
+});
+```
+
+### Dimension Mismatch
+
+Ensure your embedding model matches the index configuration:
+
+```typescript
+import { OpenAIEmbedding } from "@llamaindex/openai";
+
+// text-embedding-3-small: 1536 dimensions
+const embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-small"
+});
+
+// MongoDB index must match
+const vectorStore = new MongoDBAtlasVectorSearch({
+  dbName: "my_database",
+  collectionName: "embeddings",
+  embeddingDefinition: {
+    type: "knnVector",
+    dimensions: 1536,
+    similarity: "cosine"
+  }
+});
+```
+
+## See Also
+
+- [MongoDB Atlas Vector Search Documentation](https://www.mongodb.com/docs/atlas/atlas-vector-search/)
+- [Vector Store Index](/api/llamaindex/indices)
+- [Core Schema](/api/core/schema)

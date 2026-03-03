@@ -1,0 +1,471 @@
+---
+title: "Azure AI Search"
+description: "Azure AI Search (formerly Azure Cognitive Search) vector search integration"
+icon: "database"
+---
+
+## Overview
+
+Azure AI Search provides enterprise-grade vector search with hybrid search capabilities, combining vector similarity with full-text search and semantic ranking.
+
+## Installation
+
+```bash
+npm install @llamaindex/azure @azure/search-documents @azure/identity
+```
+
+## Basic Usage
+
+```typescript
+import { AzureAISearchVectorStore, IndexManagement } from "@llamaindex/azure";
+import { VectorStoreIndex, Document } from "llamaindex";
+
+const vectorStore = new AzureAISearchVectorStore({
+  endpoint: process.env.AZURE_AI_SEARCH_ENDPOINT,
+  key: process.env.AZURE_AI_SEARCH_KEY,
+  indexName: "my-index",
+  indexManagement: IndexManagement.CREATE_IF_NOT_EXISTS,
+  embeddingDimensionality: 1536
+});
+
+const documents = [
+  new Document({ text: "LlamaIndex is a data framework." }),
+  new Document({ text: "Azure AI Search provides vector search." })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+const queryEngine = index.asQueryEngine();
+const response = await queryEngine.query({
+  query: "What is Azure AI Search?"
+});
+```
+
+## Constructor Options
+
+### Authentication
+
+<ParamField path="endpoint" type="string">
+  Azure AI Search endpoint (defaults to `AZURE_AI_SEARCH_ENDPOINT` env var)
+</ParamField>
+
+<ParamField path="key" type="string">
+  Azure AI Search admin key (defaults to `AZURE_AI_SEARCH_KEY` env var)
+</ParamField>
+
+<ParamField path="credential" type="AzureKeyCredential | DefaultAzureCredential | ManagedIdentityCredential">
+  Azure credential object (alternative to key)
+</ParamField>
+
+### Index Configuration
+
+<ParamField path="indexName" type="string" required>
+  Name of the search index
+</ParamField>
+
+<ParamField path="indexManagement" type="IndexManagement" default="NoValidation">
+  Index validation strategy:
+  - `IndexManagement.NO_VALIDATION` - No validation
+  - `IndexManagement.VALIDATE_INDEX` - Validate index exists
+  - `IndexManagement.CREATE_IF_NOT_EXISTS` - Auto-create index
+</ParamField>
+
+<ParamField path="embeddingDimensionality" type="number" default={1536}>
+  Vector embedding dimensions
+</ParamField>
+
+<ParamField path="vectorAlgorithmType" type="KnownVectorSearchAlgorithmKind" default="ExhaustiveKnn">
+  Vector search algorithm: `ExhaustiveKnn` or `Hnsw`
+</ParamField>
+
+<ParamField path="compressionType" type="KnownVectorSearchCompressionKind">
+  Vector compression: `BinaryQuantization` or `ScalarQuantization`
+</ParamField>
+
+### Field Configuration
+
+<ParamField path="idFieldKey" type="string" default="id">
+  Field name for document IDs
+</ParamField>
+
+<ParamField path="chunkFieldKey" type="string" default="chunk">
+  Field name for text content
+</ParamField>
+
+<ParamField path="embeddingFieldKey" type="string" default="embedding">
+  Field name for embedding vectors
+</ParamField>
+
+<ParamField path="metadataStringFieldKey" type="string" default="metadata">
+  Field name for metadata JSON string
+</ParamField>
+
+<ParamField path="docIdFieldKey" type="string" default="doc_id">
+  Field name for document reference IDs
+</ParamField>
+
+<ParamField path="hiddenFieldKeys" type="string[]" default={[]}>
+  List of fields to hide from retrieval results
+</ParamField>
+
+<ParamField path="filterableMetadataFieldKeys" type="Array | Map">
+  Metadata fields that can be filtered. Can be:
+  - Array of field names: `["author", "category"]`
+  - Map of field to name: `{author: "author", topic: "theme"}`
+  - Map with types: `{author: ["author", MetadataIndexFieldType.STRING]}`
+</ParamField>
+
+## Configuration
+
+### Environment Variables
+
+```bash
+AZURE_AI_SEARCH_ENDPOINT=https://your-service.search.windows.net
+AZURE_AI_SEARCH_KEY=your-admin-key
+AZURE_SEARCH_API_VERSION=2024-09-01-preview
+```
+
+### Using Azure Identity
+
+```typescript
+import { DefaultAzureCredential } from "@azure/identity";
+import { AzureAISearchVectorStore, IndexManagement } from "@llamaindex/azure";
+
+const credential = new DefaultAzureCredential();
+
+const vectorStore = new AzureAISearchVectorStore({
+  endpoint: "https://your-service.search.windows.net",
+  credential,
+  indexName: "my-index",
+  indexManagement: IndexManagement.CREATE_IF_NOT_EXISTS
+});
+```
+
+### Using Managed Identity
+
+```typescript
+import { ManagedIdentityCredential } from "@azure/identity";
+
+const credential = new ManagedIdentityCredential(
+  process.env.AZURE_CLIENT_ID
+);
+
+const vectorStore = new AzureAISearchVectorStore({
+  endpoint: "https://your-service.search.windows.net",
+  credential,
+  indexName: "my-index",
+  indexManagement: IndexManagement.CREATE_IF_NOT_EXISTS
+});
+```
+
+## Index Management
+
+### Auto-Create Index
+
+```typescript
+import { AzureAISearchVectorStore, IndexManagement, MetadataIndexFieldType } from "@llamaindex/azure";
+
+const vectorStore = new AzureAISearchVectorStore({
+  endpoint: process.env.AZURE_AI_SEARCH_ENDPOINT,
+  key: process.env.AZURE_AI_SEARCH_KEY,
+  indexName: "documents",
+  indexManagement: IndexManagement.CREATE_IF_NOT_EXISTS,
+  embeddingDimensionality: 1536,
+  filterableMetadataFieldKeys: {
+    author: "author",
+    category: ["category", MetadataIndexFieldType.STRING],
+    year: ["year", MetadataIndexFieldType.INT32]
+  }
+});
+```
+
+### Vector Algorithm Configuration
+
+```typescript
+import { KnownVectorSearchAlgorithmKind, KnownVectorSearchCompressionKind } from "@azure/search-documents";
+
+// HNSW with binary quantization
+const vectorStore = new AzureAISearchVectorStore({
+  endpoint: process.env.AZURE_AI_SEARCH_ENDPOINT,
+  key: process.env.AZURE_AI_SEARCH_KEY,
+  indexName: "hnsw-index",
+  indexManagement: IndexManagement.CREATE_IF_NOT_EXISTS,
+  vectorAlgorithmType: KnownVectorSearchAlgorithmKind.Hnsw,
+  compressionType: KnownVectorSearchCompressionKind.BinaryQuantization,
+  embeddingDimensionality: 1536
+});
+```
+
+## Query Modes
+
+Azure AI Search supports multiple query modes:
+
+### Vector Search (Default)
+
+```typescript
+import { VectorStoreQueryMode } from "@llamaindex/core/vector-store";
+
+const retriever = index.asRetriever({
+  similarityTopK: 5
+});
+const nodes = await retriever.retrieve("query text");
+```
+
+### Hybrid Search
+
+Combines vector and full-text search:
+
+```typescript
+const response = await index.asQueryEngine().query({
+  query: "What is Azure AI Search?",
+  queryStr: "Azure AI Search",  // Required for hybrid search
+  mode: VectorStoreQueryMode.HYBRID
+});
+```
+
+### Semantic Hybrid Search
+
+Adds semantic ranking to hybrid search:
+
+```typescript
+const response = await index.asQueryEngine().query({
+  query: "What is Azure AI Search?",
+  queryStr: "Azure AI Search",
+  mode: VectorStoreQueryMode.SEMANTIC_HYBRID
+});
+```
+
+### Sparse Search
+
+Full-text search only:
+
+```typescript
+const response = await index.asQueryEngine().query({
+  query: "What is Azure AI Search?",
+  queryStr: "Azure AI Search",
+  mode: VectorStoreQueryMode.SPARSE
+});
+```
+
+## Metadata Filtering
+
+```typescript
+import { MetadataFilters, FilterCondition, FilterOperator } from "@llamaindex/core/vector-store";
+import { MetadataIndexFieldType } from "@llamaindex/azure";
+
+const vectorStore = new AzureAISearchVectorStore({
+  endpoint: process.env.AZURE_AI_SEARCH_ENDPOINT,
+  key: process.env.AZURE_AI_SEARCH_KEY,
+  indexName: "filtered-docs",
+  indexManagement: IndexManagement.CREATE_IF_NOT_EXISTS,
+  filterableMetadataFieldKeys: {
+    category: "category",
+    author: "author",
+    tags: ["tags", MetadataIndexFieldType.COLLECTION]
+  }
+});
+
+const documents = [
+  new Document({
+    text: "Doc 1",
+    metadata: { category: "tech", author: "John", tags: ["ai", "ml"] }
+  }),
+  new Document({
+    text: "Doc 2",
+    metadata: { category: "science", author: "Jane" }
+  })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+const retriever = index.asRetriever({
+  filters: new MetadataFilters({
+    filters: [
+      { key: "category", value: "tech", operator: FilterOperator.EQ },
+      { key: "tags", value: ["ai"], operator: FilterOperator.IN }
+    ],
+    condition: FilterCondition.AND
+  })
+});
+
+const nodes = await retriever.retrieve("query");
+```
+
+## Supported Filter Operators
+
+Azure AI Search supports:
+
+- `EQ` - Equal
+- `IN` - Value in array
+
+## Managing Data
+
+### Add Documents
+
+```typescript
+const newDoc = new Document({
+  text: "New content",
+  metadata: { source: "api" }
+});
+await index.insert(newDoc);
+```
+
+### Delete by Document ID
+
+```typescript
+await vectorStore.delete(refDocId);
+```
+
+### Get Nodes
+
+```typescript
+// Get specific nodes by ID
+const nodes = await vectorStore.getNodes(["id1", "id2"]);
+
+// Get nodes with filters
+const filteredNodes = await vectorStore.getNodes(
+  undefined,
+  new MetadataFilters({
+    filters: [{ key: "category", value: "tech", operator: FilterOperator.EQ }]
+  })
+);
+
+// Get with limit
+const limitedNodes = await vectorStore.getNodes(undefined, undefined, 10);
+```
+
+## Complete Example
+
+```typescript
+import { AzureAISearchVectorStore, IndexManagement, MetadataIndexFieldType } from "@llamaindex/azure";
+import { VectorStoreIndex, Document, Settings } from "llamaindex";
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+import { KnownVectorSearchAlgorithmKind, KnownAnalyzerNames } from "@azure/search-documents";
+
+// Configure settings
+Settings.llm = new OpenAI({ model: "gpt-4" });
+Settings.embedModel = new OpenAIEmbedding({ model: "text-embedding-3-small" });
+
+// Create vector store with full configuration
+const vectorStore = new AzureAISearchVectorStore({
+  endpoint: process.env.AZURE_AI_SEARCH_ENDPOINT,
+  key: process.env.AZURE_AI_SEARCH_KEY,
+  indexName: "technical-docs",
+  indexManagement: IndexManagement.CREATE_IF_NOT_EXISTS,
+  embeddingDimensionality: 1536,
+  vectorAlgorithmType: KnownVectorSearchAlgorithmKind.Hnsw,
+  languageAnalyzer: KnownAnalyzerNames.EnLucene,
+  hiddenFieldKeys: ["embedding"],
+  filterableMetadataFieldKeys: {
+    author: "author",
+    category: ["category", MetadataIndexFieldType.STRING],
+    year: ["year", MetadataIndexFieldType.INT32]
+  }
+});
+
+// Load documents
+const documents = [
+  new Document({
+    text: "Azure AI Search provides vector search capabilities...",
+    metadata: { author: "Microsoft", category: "cloud", year: 2024 }
+  }),
+  new Document({
+    text: "LlamaIndex integrates with Azure services...",
+    metadata: { author: "LlamaIndex", category: "integration", year: 2024 }
+  })
+];
+
+// Build index
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+// Query with hybrid search and filters
+const response = await index.asQueryEngine().query({
+  query: "Azure vector search",
+  queryStr: "Azure vector search",
+  mode: VectorStoreQueryMode.HYBRID,
+  filters: new MetadataFilters({
+    filters: [
+      { key: "category", value: "cloud", operator: FilterOperator.EQ }
+    ]
+  })
+});
+
+console.log(response.response);
+```
+
+## Best Practices
+
+1. **Use HNSW for production**: Better performance than exhaustive KNN
+2. **Enable compression**: Reduce storage costs with quantization
+3. **Index only necessary metadata**: Minimize index size
+4. **Use hybrid search**: Combine vector and text for better results
+5. **Monitor costs**: Track search units and storage usage
+6. **Implement retry logic**: Handle transient failures
+7. **Use managed identity**: More secure than API keys
+
+## Troubleshooting
+
+### Index Not Found
+
+```typescript
+// Use auto-create
+const vectorStore = new AzureAISearchVectorStore({
+  endpoint: process.env.AZURE_AI_SEARCH_ENDPOINT,
+  key: process.env.AZURE_AI_SEARCH_KEY,
+  indexName: "my-index",
+  indexManagement: IndexManagement.CREATE_IF_NOT_EXISTS
+});
+```
+
+### Authentication Failed
+
+Verify your credentials:
+
+```typescript
+import { SearchIndexClient, AzureKeyCredential } from "@azure/search-documents";
+
+try {
+  const client = new SearchIndexClient(
+    process.env.AZURE_AI_SEARCH_ENDPOINT!,
+    new AzureKeyCredential(process.env.AZURE_AI_SEARCH_KEY!)
+  );
+  const indexes = await client.listIndexes();
+  console.log("Connected successfully");
+} catch (error) {
+  console.error("Authentication error:", error);
+}
+```
+
+### Dimension Mismatch
+
+Ensure embedding dimensions match:
+
+```typescript
+import { OpenAIEmbedding } from "@llamaindex/openai";
+
+// text-embedding-3-small: 1536 dimensions
+const embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-small"
+});
+
+// Azure index must match
+const vectorStore = new AzureAISearchVectorStore({
+  endpoint: process.env.AZURE_AI_SEARCH_ENDPOINT,
+  key: process.env.AZURE_AI_SEARCH_KEY,
+  indexName: "my-index",
+  embeddingDimensionality: 1536
+});
+```
+
+## See Also
+
+- [Azure AI Search Documentation](https://docs.microsoft.com/azure/search/)
+- [Azure SDK for JavaScript](https://github.com/Azure/azure-sdk-for-js)
+- [Vector Store Index](/api/llamaindex/indices)
+- [Core Schema](/api/core/schema)

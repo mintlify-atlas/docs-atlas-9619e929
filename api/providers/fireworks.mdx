@@ -1,0 +1,355 @@
+---
+title: "Fireworks AI"
+description: "Fireworks AI LLM and embedding provider"
+icon: "sparkles"
+---
+
+## Overview
+
+Fireworks AI provides fast inference for open-source LLMs and embedding models. The provider extends OpenAI's interface with Fireworks AI's API endpoints.
+
+## Installation
+
+```bash
+npm install @llamaindex/fireworks
+```
+
+## Basic Usage
+
+### LLM
+
+```typescript
+import { FireworksLLM } from "@llamaindex/fireworks";
+
+const llm = new FireworksLLM({
+  model: "accounts/fireworks/models/llama-v3p1-70b-instruct",
+  apiKey: process.env.FIREWORKS_API_KEY
+});
+
+const response = await llm.chat({
+  messages: [
+    { role: "user", content: "Explain quantum computing" }
+  ]
+});
+
+console.log(response.message.content);
+```
+
+### Embeddings
+
+```typescript
+import { FireworksEmbedding } from "@llamaindex/fireworks";
+
+const embedModel = new FireworksEmbedding({
+  model: "nomic-ai/nomic-embed-text-v1.5",
+  apiKey: process.env.FIREWORKS_API_KEY
+});
+
+const embedding = await embedModel.getTextEmbedding(
+  "LlamaIndex is a data framework for LLM applications"
+);
+```
+
+## Constructor Options
+
+### FireworksLLM
+
+<ParamField path="model" type="string" default="accounts/fireworks/models/mixtral-8x7b-instruct">
+  Fireworks AI model name
+</ParamField>
+
+<ParamField path="apiKey" type="string">
+  Fireworks API key (defaults to `FIREWORKS_API_KEY` env variable)
+</ParamField>
+
+<ParamField path="temperature" type="number">
+  Sampling temperature
+</ParamField>
+
+<ParamField path="maxTokens" type="number">
+  Maximum tokens in response
+</ParamField>
+
+<ParamField path="topP" type="number">
+  Nucleus sampling parameter
+</ParamField>
+
+<ParamField path="additionalSessionOptions" type="object">
+  Additional OpenAI client options (e.g., custom baseURL)
+</ParamField>
+
+### FireworksEmbedding
+
+<ParamField path="model" type="string" default="nomic-ai/nomic-embed-text-v1.5">
+  Fireworks AI embedding model name
+</ParamField>
+
+<ParamField path="apiKey" type="string">
+  Fireworks API key (defaults to `FIREWORKS_API_KEY` env variable)
+</ParamField>
+
+<ParamField path="additionalSessionOptions" type="object">
+  Additional OpenAI client options
+</ParamField>
+
+## Supported Models
+
+### Chat Models
+
+#### Llama 3.1
+- `accounts/fireworks/models/llama-v3p1-405b-instruct`: 405B, most capable
+- `accounts/fireworks/models/llama-v3p1-70b-instruct`: 70B, balanced
+- `accounts/fireworks/models/llama-v3p1-8b-instruct`: 8B, fast
+
+#### Llama 3
+- `accounts/fireworks/models/llama-v3-70b-instruct`
+- `accounts/fireworks/models/llama-v3-8b-instruct`
+
+#### Mixtral
+- `accounts/fireworks/models/mixtral-8x7b-instruct`: Default model
+- `accounts/fireworks/models/mixtral-8x22b-instruct`
+
+#### Qwen
+- `accounts/fireworks/models/qwen2p5-72b-instruct`
+- `accounts/fireworks/models/qwen2p5-7b-instruct`
+
+#### DeepSeek
+- `accounts/fireworks/models/deepseek-v3`
+
+### Embedding Models
+
+- `nomic-ai/nomic-embed-text-v1.5`: Default, 768 dimensions
+- `nomic-ai/nomic-embed-text-v1`: 768 dimensions
+- `WhereIsAI/UAE-Large-V1`: 1024 dimensions
+- `thenlper/gte-large`: 1024 dimensions
+
+## Streaming
+
+```typescript
+const stream = await llm.chat({
+  messages: [{ role: "user", content: "Write a story about AI" }],
+  stream: true
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.delta);
+}
+```
+
+## Function Calling
+
+Fireworks AI supports function calling on compatible models:
+
+```typescript
+import { tool } from "@llamaindex/core/tools";
+import { z } from "zod";
+
+const weatherTool = tool({
+  name: "get_weather",
+  description: "Get current weather",
+  parameters: z.object({
+    location: z.string(),
+    units: z.enum(["celsius", "fahrenheit"]).optional()
+  }),
+  execute: async ({ location, units = "celsius" }) => {
+    return `Weather in ${location}: 22°${units === "celsius" ? "C" : "F"}`;
+  }
+});
+
+const llm = new FireworksLLM({
+  model: "accounts/fireworks/models/llama-v3p1-70b-instruct"
+});
+
+const response = await llm.chat({
+  messages: [{ role: "user", content: "What's the weather in Tokyo?" }],
+  tools: [weatherTool]
+});
+```
+
+## Structured Output
+
+```typescript
+import { z } from "zod";
+
+const schema = z.object({
+  name: z.string(),
+  age: z.number(),
+  interests: z.array(z.string())
+});
+
+const result = await llm.exec({
+  messages: [{ role: "user", content: "Extract info: John is 30 and likes coding, hiking" }],
+  responseFormat: schema
+});
+```
+
+## With LlamaIndex
+
+```typescript
+import { Settings, VectorStoreIndex } from "llamaindex";
+import { FireworksLLM, FireworksEmbedding } from "@llamaindex/fireworks";
+
+Settings.llm = new FireworksLLM({
+  model: "accounts/fireworks/models/llama-v3p1-70b-instruct"
+});
+
+Settings.embedModel = new FireworksEmbedding({
+  model: "nomic-ai/nomic-embed-text-v1.5"
+});
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+const queryEngine = index.asQueryEngine();
+
+const response = await queryEngine.query({
+  query: "What are the main features?"
+});
+```
+
+## Convenience Functions
+
+```typescript
+import { fireworks } from "@llamaindex/fireworks";
+
+const llm = fireworks({
+  model: "accounts/fireworks/models/llama-v3p1-8b-instruct"
+});
+```
+
+## Configuration
+
+### Environment Variables
+
+```bash
+FIREWORKS_API_KEY=fw_...
+```
+
+### Custom Base URL
+
+```typescript
+const llm = new FireworksLLM({
+  additionalSessionOptions: {
+    baseURL: "https://custom-fireworks-endpoint.com/inference/v1"
+  }
+});
+```
+
+Default base URL: `https://api.fireworks.ai/inference/v1`
+
+### Global Settings
+
+```typescript
+import { Settings } from "llamaindex";
+import { FireworksLLM } from "@llamaindex/fireworks";
+
+Settings.llm = new FireworksLLM({
+  model: "accounts/fireworks/models/llama-v3p1-70b-instruct"
+});
+```
+
+## Model Selection Guide
+
+| Use Case | Recommended Model | Why |
+|----------|-------------------|----- |
+| Best quality | llama-v3p1-405b-instruct | Most capable |
+| Balanced | llama-v3p1-70b-instruct | Good quality, fast |
+| Speed critical | llama-v3p1-8b-instruct | Fastest |
+| MoE architecture | mixtral-8x22b-instruct | Efficient, capable |
+| Embeddings | nomic-embed-text-v1.5 | High quality, latest |
+
+## Performance
+
+Fireworks AI optimizes for low latency:
+
+- **Fast inference**: Optimized model serving
+- **Batch processing**: Efficient for high throughput
+- **Streaming**: Real-time token generation
+- **Global deployment**: Low latency worldwide
+
+```typescript
+const startTime = Date.now();
+
+const response = await llm.chat({
+  messages: [{ role: "user", content: "Explain AI" }]
+});
+
+const duration = Date.now() - startTime;
+console.log(`Response time: ${duration}ms`);
+```
+
+## Error Handling
+
+```typescript
+try {
+  const response = await llm.chat({ messages });
+} catch (error) {
+  if (error.message.includes("FIREWORKS_API_KEY")) {
+    console.error("API key not set or invalid");
+  } else if (error.status === 429) {
+    console.error("Rate limit exceeded");
+  } else {
+    console.error("API error:", error.message);
+  }
+}
+```
+
+## Rate Limits
+
+Fireworks AI has different rate limits based on your plan:
+
+```typescript
+try {
+  const response = await llm.chat({ messages });
+} catch (error) {
+  if (error.status === 429) {
+    console.log("Rate limit hit, waiting...");
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Retry logic
+  }
+}
+```
+
+## Best Practices
+
+1. **Choose right model**: Balance quality vs. speed and cost
+2. **Use streaming**: Better UX for chat applications
+3. **Enable function calling**: For structured interactions
+4. **Monitor performance**: Track latency and costs
+5. **Set appropriate tokens**: Control response length
+6. **Use embeddings**: nomic-embed-text-v1.5 for RAG applications
+
+## Example: RAG Application
+
+```typescript
+import { VectorStoreIndex, Settings } from "llamaindex";
+import { FireworksLLM, FireworksEmbedding } from "@llamaindex/fireworks";
+
+// Configure both LLM and embeddings
+Settings.llm = new FireworksLLM({
+  model: "accounts/fireworks/models/llama-v3p1-70b-instruct",
+  temperature: 0.1
+});
+
+Settings.embedModel = new FireworksEmbedding({
+  model: "nomic-ai/nomic-embed-text-v1.5"
+});
+
+// Build index
+const index = await VectorStoreIndex.fromDocuments(documents);
+
+// Query
+const queryEngine = index.asQueryEngine();
+const response = await queryEngine.query({
+  query: "What are the key insights?"
+});
+```
+
+## Pricing
+
+Fireworks AI offers competitive pricing for open-source models. Check [Fireworks AI pricing](https://fireworks.ai/pricing) for current rates.
+
+## See Also
+
+- [Core LLM API](/api/core/llms)
+- [Core Embedding API](/api/core/embeddings)
+- [Fireworks AI Documentation](https://docs.fireworks.ai)
+- [Fireworks AI Models](https://fireworks.ai/models)

@@ -1,0 +1,406 @@
+---
+title: "DataStax Astra DB"
+description: "DataStax Astra DB vector database integration"
+icon: "database"
+---
+
+## Overview
+
+DataStax Astra DB is a cloud-native vector database built on Apache Cassandra. It provides serverless vector search with automatic scaling and multi-region support.
+
+## Installation
+
+```bash
+npm install @llamaindex/astra @datastax/astra-db-ts
+```
+
+## Basic Usage
+
+```typescript
+import { AstraDBVectorStore } from "@llamaindex/astra";
+import { VectorStoreIndex, Document } from "llamaindex";
+
+const vectorStore = new AstraDBVectorStore({
+  params: {
+    token: process.env.ASTRA_DB_APPLICATION_TOKEN,
+    endpoint: process.env.ASTRA_DB_API_ENDPOINT,
+    namespace: "default_keyspace"
+  }
+});
+
+// Connect to existing collection or create new one
+await vectorStore.connect("my_collection");
+// OR
+// await vectorStore.createAndConnect("my_collection", {
+//   vector: { dimension: 1536, metric: "cosine" }
+// });
+
+const documents = [
+  new Document({ text: "LlamaIndex is a data framework." }),
+  new Document({ text: "Astra DB is a vector database." })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+const queryEngine = index.asQueryEngine();
+const response = await queryEngine.query({
+  query: "What is Astra DB?"
+});
+```
+
+## Constructor Options
+
+<ParamField path="params.token" type="string" required>
+  Astra DB application token (defaults to `ASTRA_DB_APPLICATION_TOKEN` env var)
+</ParamField>
+
+<ParamField path="params.endpoint" type="string" required>
+  Astra DB API endpoint (defaults to `ASTRA_DB_API_ENDPOINT` env var)
+</ParamField>
+
+<ParamField path="params.namespace" type="string" default="default_keyspace">
+  Astra DB namespace/keyspace (defaults to `ASTRA_DB_NAMESPACE` env var)
+</ParamField>
+
+<ParamField path="idKey" type="string" default="_id">
+  Field name for storing document IDs
+</ParamField>
+
+<ParamField path="contentKey" type="string" default="content">
+  Field name for storing text content
+</ParamField>
+
+## Configuration
+
+### Environment Variables
+
+```bash
+ASTRA_DB_APPLICATION_TOKEN=AstraCS:xyz...
+ASTRA_DB_API_ENDPOINT=https://xxx-yyy-zzz.apps.astra.datastax.com
+ASTRA_DB_NAMESPACE=default_keyspace  # Optional
+```
+
+### Getting Astra DB Credentials
+
+1. Sign up at [Astra DB](https://astra.datastax.com)
+2. Create a new database
+3. Generate an application token
+4. Copy the API endpoint from the database overview
+
+## Collection Management
+
+### Create and Connect
+
+```typescript
+import { AstraDBVectorStore } from "@llamaindex/astra";
+
+const vectorStore = new AstraDBVectorStore({
+  params: {
+    token: process.env.ASTRA_DB_APPLICATION_TOKEN,
+    endpoint: process.env.ASTRA_DB_API_ENDPOINT
+  }
+});
+
+// Create new collection with vector configuration
+await vectorStore.createAndConnect("my_collection", {
+  vector: {
+    dimension: 1536,  // Match your embedding model
+    metric: "cosine"  // or "euclidean", "dot_product"
+  }
+});
+```
+
+### Connect to Existing Collection
+
+```typescript
+// Connect to existing collection
+await vectorStore.connect("existing_collection");
+```
+
+### Important
+
+You **must** call either `connect()` or `createAndConnect()` before adding, deleting, or querying documents.
+
+## Querying
+
+### Basic Query
+
+```typescript
+const index = await VectorStoreIndex.fromVectorStore(vectorStore);
+
+const retriever = index.asRetriever({
+  similarityTopK: 5
+});
+
+const nodes = await retriever.retrieve("query text");
+
+nodes.forEach(node => {
+  console.log(`Score: ${node.score}`);
+  console.log(`Text: ${node.node.text}`);
+});
+```
+
+### Metadata Filtering
+
+```typescript
+import { MetadataFilters, FilterCondition, FilterOperator } from "@llamaindex/core/vector-store";
+
+const documents = [
+  new Document({
+    text: "Doc 1",
+    metadata: { category: "tech", year: 2023, tags: ["ai", "ml"] }
+  }),
+  new Document({
+    text: "Doc 2",
+    metadata: { category: "science", year: 2024 }
+  })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+const retriever = index.asRetriever({
+  filters: new MetadataFilters({
+    filters: [
+      { key: "category", value: "tech", operator: FilterOperator.EQ },
+      { key: "year", value: 2023, operator: FilterOperator.GTE }
+    ],
+    condition: FilterCondition.AND
+  })
+});
+
+const nodes = await retriever.retrieve("query");
+```
+
+## Supported Filter Operators
+
+Astra DB supports:
+
+- `EQ` - Equal
+- `NE` - Not equal
+- `GT` - Greater than
+- `LT` - Less than
+- `GTE` - Greater than or equal
+- `LTE` - Less than or equal
+- `IN` - Value in array
+- `NIN` - Value not in array
+- `IS_EMPTY` - Array is empty (size = 0)
+
+## Managing Data
+
+### Add Documents
+
+```typescript
+const newDoc = new Document({
+  text: "New content",
+  metadata: { source: "api" }
+});
+await index.insert(newDoc);
+```
+
+### Delete by Document ID
+
+```typescript
+await vectorStore.delete(refDocId);
+```
+
+### Access Astra DB Client
+
+```typescript
+const client = vectorStore.client();
+
+// Use DataAPI client directly
+// See: https://docs.datastax.com/en/astra-db-serverless/api-reference/data-api.html
+```
+
+## Complete Example
+
+```typescript
+import { AstraDBVectorStore } from "@llamaindex/astra";
+import { VectorStoreIndex, Document, Settings } from "llamaindex";
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+
+// Configure settings
+Settings.llm = new OpenAI({ model: "gpt-4" });
+Settings.embedModel = new OpenAIEmbedding();
+
+// Create vector store
+const vectorStore = new AstraDBVectorStore({
+  params: {
+    token: process.env.ASTRA_DB_APPLICATION_TOKEN,
+    endpoint: process.env.ASTRA_DB_API_ENDPOINT,
+    namespace: "llamaindex"
+  }
+});
+
+// Create collection with vector configuration
+await vectorStore.createAndConnect("technical_docs", {
+  vector: {
+    dimension: 1536,
+    metric: "cosine"
+  }
+});
+
+// Load documents
+const documents = [
+  new Document({
+    text: "Astra DB is a serverless vector database...",
+    metadata: { source: "docs", category: "database" }
+  }),
+  new Document({
+    text: "LlamaIndex integrates with Astra DB...",
+    metadata: { source: "tutorial", category: "integration" }
+  })
+];
+
+// Build index
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+// Query with filters
+const retriever = index.asRetriever({
+  similarityTopK: 3,
+  filters: new MetadataFilters({
+    filters: [
+      { key: "category", value: "database", operator: FilterOperator.EQ }
+    ]
+  })
+});
+
+const nodes = await retriever.retrieve("serverless vector database");
+console.log(nodes);
+```
+
+## Distance Metrics
+
+Astra DB supports different similarity metrics:
+
+```typescript
+// Cosine similarity (recommended for normalized embeddings)
+await vectorStore.createAndConnect("cosine_collection", {
+  vector: { dimension: 1536, metric: "cosine" }
+});
+
+// Euclidean distance
+await vectorStore.createAndConnect("euclidean_collection", {
+  vector: { dimension: 1536, metric: "euclidean" }
+});
+
+// Dot product
+await vectorStore.createAndConnect("dot_product_collection", {
+  vector: { dimension: 1536, metric: "dot_product" }
+});
+```
+
+## Multi-Region Support
+
+Astra DB automatically replicates data across multiple regions:
+
+```typescript
+// Data is automatically replicated
+const vectorStore = new AstraDBVectorStore({
+  params: {
+    token: process.env.ASTRA_DB_APPLICATION_TOKEN,
+    endpoint: process.env.ASTRA_DB_API_ENDPOINT
+  }
+});
+
+// Queries automatically use nearest region
+```
+
+## Namespaces (Keyspaces)
+
+Organize collections into namespaces:
+
+```typescript
+// Production namespace
+const prodStore = new AstraDBVectorStore({
+  params: {
+    token: process.env.ASTRA_DB_APPLICATION_TOKEN,
+    endpoint: process.env.ASTRA_DB_API_ENDPOINT,
+    namespace: "production"
+  }
+});
+
+// Development namespace
+const devStore = new AstraDBVectorStore({
+  params: {
+    token: process.env.ASTRA_DB_APPLICATION_TOKEN,
+    endpoint: process.env.ASTRA_DB_API_ENDPOINT,
+    namespace: "development"
+  }
+});
+```
+
+## Best Practices
+
+1. **Use appropriate metric**: Cosine for normalized vectors, dot_product for speed
+2. **Organize with namespaces**: Separate environments or use cases
+3. **Monitor usage**: Track API requests and storage in Astra console
+4. **Handle errors**: Implement retry logic for transient failures
+5. **Batch operations**: Insert multiple documents at once for efficiency
+6. **Use serverless**: Automatic scaling eliminates capacity planning
+
+## Troubleshooting
+
+### Authentication Failed
+
+Verify your credentials:
+
+```typescript
+try {
+  const vectorStore = new AstraDBVectorStore({
+    params: {
+      token: process.env.ASTRA_DB_APPLICATION_TOKEN,
+      endpoint: process.env.ASTRA_DB_API_ENDPOINT
+    }
+  });
+  await vectorStore.connect("test_collection");
+  console.log("Connected successfully");
+} catch (error) {
+  console.error("Authentication error:", error.message);
+}
+```
+
+### Collection Not Found
+
+Create the collection first:
+
+```typescript
+// Create if it doesn't exist
+await vectorStore.createAndConnect("my_collection", {
+  vector: { dimension: 1536, metric: "cosine" }
+});
+```
+
+### Dimension Mismatch
+
+Ensure embedding dimensions match collection configuration:
+
+```typescript
+import { OpenAIEmbedding } from "@llamaindex/openai";
+
+// text-embedding-3-small: 1536 dimensions
+const embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-small"
+});
+
+// Astra collection must match
+await vectorStore.createAndConnect("my_collection", {
+  vector: {
+    dimension: 1536,  // Must match embedding model
+    metric: "cosine"
+  }
+});
+```
+
+## See Also
+
+- [Astra DB Documentation](https://docs.datastax.com/en/astra-db-serverless/)
+- [Astra DB Console](https://astra.datastax.com)
+- [Vector Store Index](/api/llamaindex/indices)
+- [Core Schema](/api/core/schema)

@@ -1,0 +1,272 @@
+---
+title: "Together AI"
+description: "Together AI LLM and embedding provider"
+icon: "users"
+---
+
+## Overview
+
+Together AI provides fast inference for open-source LLMs and embedding models. The provider extends OpenAI's interface with Together AI's API endpoints.
+
+## Installation
+
+```bash
+npm install @llamaindex/together
+```
+
+## Basic Usage
+
+### LLM
+
+```typescript
+import { TogetherLLM } from "@llamaindex/together";
+
+const llm = new TogetherLLM({
+  model: "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+  apiKey: process.env.TOGETHER_API_KEY
+});
+
+const response = await llm.chat({
+  messages: [
+    { role: "user", content: "Explain machine learning" }
+  ]
+});
+
+console.log(response.message.content);
+```
+
+### Embeddings
+
+```typescript
+import { TogetherEmbedding } from "@llamaindex/together";
+
+const embedModel = new TogetherEmbedding({
+  model: "togethercomputer/m2-bert-80M-32k-retrieval",
+  apiKey: process.env.TOGETHER_API_KEY
+});
+
+const embedding = await embedModel.getTextEmbedding(
+  "LlamaIndex is a data framework for LLM applications"
+);
+```
+
+## Constructor Options
+
+### TogetherLLM
+
+<ParamField path="model" type="string" default="togethercomputer/llama-2-7b-chat">
+  Together AI model name
+</ParamField>
+
+<ParamField path="apiKey" type="string">
+  Together AI API key (defaults to `TOGETHER_API_KEY` env variable)
+</ParamField>
+
+<ParamField path="temperature" type="number">
+  Sampling temperature
+</ParamField>
+
+<ParamField path="maxTokens" type="number">
+  Maximum tokens in response
+</ParamField>
+
+<ParamField path="topP" type="number">
+  Nucleus sampling parameter
+</ParamField>
+
+<ParamField path="additionalSessionOptions" type="object">
+  Additional OpenAI client options (e.g., custom baseURL)
+</ParamField>
+
+### TogetherEmbedding
+
+<ParamField path="model" type="string" default="togethercomputer/m2-bert-80M-32k-retrieval">
+  Together AI embedding model name
+</ParamField>
+
+<ParamField path="apiKey" type="string">
+  Together AI API key (defaults to `TOGETHER_API_KEY` env variable)
+</ParamField>
+
+<ParamField path="additionalSessionOptions" type="object">
+  Additional OpenAI client options
+</ParamField>
+
+## Supported Models
+
+### Chat Models
+
+#### Llama 3.1
+- `meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo`: 405B, most capable
+- `meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo`: 70B, balanced
+- `meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo`: 8B, fast
+
+#### Llama 3
+- `meta-llama/Meta-Llama-3-70B-Instruct-Turbo`
+- `meta-llama/Meta-Llama-3-8B-Instruct-Turbo`
+
+#### Llama 2
+- `togethercomputer/llama-2-7b-chat`: Default model
+- `togethercomputer/llama-2-13b-chat`
+- `togethercomputer/llama-2-70b-chat`
+
+#### Mixtral
+- `mistralai/Mixtral-8x7B-Instruct-v0.1`
+- `mistralai/Mixtral-8x22B-Instruct-v0.1`
+
+#### Qwen
+- `Qwen/Qwen2.5-72B-Instruct-Turbo`
+- `Qwen/Qwen2.5-7B-Instruct-Turbo`
+
+### Embedding Models
+
+- `togethercomputer/m2-bert-80M-32k-retrieval`: Default, 32K context
+- `togethercomputer/m2-bert-80M-8k-retrieval`: 8K context
+- `WhereIsAI/UAE-Large-V1`: 512 dimensions
+- `BAAI/bge-large-en-v1.5`: BGE large English
+
+## Streaming
+
+```typescript
+const stream = await llm.chat({
+  messages: [{ role: "user", content: "Write a story about AI" }],
+  stream: true
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.delta);
+}
+```
+
+## Function Calling
+
+Together AI supports function calling on compatible models:
+
+```typescript
+import { tool } from "@llamaindex/core/tools";
+import { z } from "zod";
+
+const weatherTool = tool({
+  name: "get_weather",
+  description: "Get current weather",
+  parameters: z.object({
+    location: z.string(),
+    units: z.enum(["celsius", "fahrenheit"]).optional()
+  }),
+  execute: async ({ location, units = "celsius" }) => {
+    return `Weather in ${location}: 22°${units === "celsius" ? "C" : "F"}`;
+  }
+});
+
+const llm = new TogetherLLM({
+  model: "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo"
+});
+
+const response = await llm.chat({
+  messages: [{ role: "user", content: "What's the weather in Paris?" }],
+  tools: [weatherTool]
+});
+```
+
+## With LlamaIndex
+
+```typescript
+import { Settings, VectorStoreIndex } from "llamaindex";
+import { TogetherLLM, TogetherEmbedding } from "@llamaindex/together";
+
+Settings.llm = new TogetherLLM({
+  model: "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo"
+});
+
+Settings.embedModel = new TogetherEmbedding({
+  model: "togethercomputer/m2-bert-80M-32k-retrieval"
+});
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+const queryEngine = index.asQueryEngine();
+
+const response = await queryEngine.query({
+  query: "What are the key features?"
+});
+```
+
+## Convenience Functions
+
+```typescript
+import { together } from "@llamaindex/together";
+
+// Quick LLM instance
+const llm = together({
+  model: "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"
+});
+```
+
+## Configuration
+
+### Environment Variables
+
+```bash
+TOGETHER_API_KEY=your-api-key-here
+```
+
+### Custom Base URL
+
+```typescript
+const llm = new TogetherLLM({
+  additionalSessionOptions: {
+    baseURL: "https://custom-together-endpoint.com/v1"
+  }
+});
+```
+
+Default base URL: `https://api.together.xyz/v1`
+
+## Model Selection Guide
+
+| Use Case | Recommended Model | Why |
+|----------|-------------------|----- |
+| Complex reasoning | Meta-Llama-3.1-405B-Instruct-Turbo | Best quality |
+| General purpose | Meta-Llama-3.1-70B-Instruct-Turbo | Balanced |
+| Speed critical | Meta-Llama-3.1-8B-Instruct-Turbo | Fastest |
+| Long context | togethercomputer/m2-bert-80M-32k-retrieval | 32K embeddings |
+
+## Performance
+
+Together AI offers competitive inference speeds:
+
+- **Turbo models**: Optimized for low latency
+- **Batch processing**: Efficient for high throughput
+- **Streaming**: Real-time token generation
+
+## Error Handling
+
+```typescript
+try {
+  const response = await llm.chat({ messages });
+} catch (error) {
+  if (error.message.includes("TOGETHER_API_KEY")) {
+    console.error("API key not set or invalid");
+  } else {
+    console.error("API error:", error.message);
+  }
+}
+```
+
+## Best Practices
+
+1. **Use Turbo models**: Better performance for production
+2. **Match embedding context**: Use 32K model for long documents
+3. **Enable streaming**: Better UX for chat applications
+4. **Choose right model size**: Balance cost vs. quality needs
+5. **Set appropriate tokens**: Control response length and costs
+
+## Pricing
+
+Together AI offers competitive pricing for open-source models. Check [Together AI pricing](https://www.together.ai/pricing) for current rates.
+
+## See Also
+
+- [Core LLM API](/api/core/llms)
+- [Core Embedding API](/api/core/embeddings)
+- [Together AI Documentation](https://docs.together.ai)
+- [Together AI Models](https://www.together.ai/models)

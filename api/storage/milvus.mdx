@@ -1,0 +1,479 @@
+---
+title: "Milvus"
+description: "Milvus vector database integration"
+icon: "database"
+---
+
+## Overview
+
+Milvus is an open-source vector database built for scalable similarity search and AI applications. It supports billions of vectors with millisecond search performance.
+
+## Installation
+
+```bash
+npm install @llamaindex/milvus @zilliz/milvus2-sdk-node
+```
+
+## Basic Usage
+
+```typescript
+import { MilvusVectorStore } from "@llamaindex/milvus";
+import { VectorStoreIndex, Document } from "llamaindex";
+
+const vectorStore = new MilvusVectorStore({
+  params: {
+    configOrAddress: "http://localhost:19530"
+  },
+  collection: "my_collection"
+});
+
+const documents = [
+  new Document({ text: "LlamaIndex is a data framework." }),
+  new Document({ text: "Milvus is a vector database." })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+const queryEngine = index.asQueryEngine();
+const response = await queryEngine.query({
+  query: "What is Milvus?"
+});
+```
+
+## Constructor Options
+
+<ParamField path="milvusClient" type="MilvusClient">
+  Existing Milvus client instance
+</ParamField>
+
+<ParamField path="params.configOrAddress" type="ClientConfig | string">
+  Milvus server address (defaults to `MILVUS_ADDRESS` env var)
+</ParamField>
+
+<ParamField path="params.ssl" type="boolean">
+  Enable SSL connection (defaults to `MILVUS_SSL` env var)
+</ParamField>
+
+<ParamField path="params.username" type="string">
+  Milvus username (defaults to `MILVUS_USERNAME` env var)
+</ParamField>
+
+<ParamField path="params.password" type="string">
+  Milvus password (defaults to `MILVUS_PASSWORD` env var)
+</ParamField>
+
+<ParamField path="collection" type="string" default="llamacollection">
+  Collection name for storing vectors
+</ParamField>
+
+<ParamField path="idKey" type="string" default="id">
+  Field name for storing node IDs
+</ParamField>
+
+<ParamField path="contentKey" type="string" default="content">
+  Field name for storing text content
+</ParamField>
+
+<ParamField path="metadataKey" type="string" default="metadata">
+  Field name for storing metadata (as JSON)
+</ParamField>
+
+<ParamField path="embeddingKey" type="string" default="embedding">
+  Field name for storing embedding vectors
+</ParamField>
+
+## Configuration
+
+### Environment Variables
+
+```bash
+MILVUS_ADDRESS=http://localhost:19530
+MILVUS_USERNAME=username  # Optional
+MILVUS_PASSWORD=password  # Optional
+MILVUS_SSL=false          # Optional
+```
+
+### With Custom Client
+
+```typescript
+import { MilvusClient } from "@zilliz/milvus2-sdk-node";
+import { MilvusVectorStore } from "@llamaindex/milvus";
+
+const milvusClient = new MilvusClient({
+  address: "localhost:19530",
+  username: "username",
+  password: "password"
+});
+
+const vectorStore = new MilvusVectorStore({
+  milvusClient,
+  collection: "my_collection"
+});
+```
+
+## Running Milvus
+
+### Docker Compose
+
+```yaml
+version: '3.5'
+
+services:
+  etcd:
+    container_name: milvus-etcd
+    image: quay.io/coreos/etcd:v3.5.5
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+    volumes:
+      - etcd:/etcd
+
+  minio:
+    container_name: milvus-minio
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    volumes:
+      - minio:/minio_data
+    command: minio server /minio_data
+
+  milvus:
+    container_name: milvus-standalone
+    image: milvusdb/milvus:v2.3.3
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    volumes:
+      - milvus:/var/lib/milvus
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    depends_on:
+      - etcd
+      - minio
+
+volumes:
+  etcd:
+  minio:
+  milvus:
+```
+
+### Docker
+
+```bash
+docker run -d --name milvus \
+  -p 19530:19530 \
+  -p 9091:9091 \
+  milvusdb/milvus:latest
+```
+
+### Zilliz Cloud
+
+Sign up at [Zilliz Cloud](https://cloud.zilliz.com) for managed Milvus:
+
+```typescript
+const vectorStore = new MilvusVectorStore({
+  params: {
+    configOrAddress: "https://your-cluster.api.gcp-us-west1.zillizcloud.com",
+    username: process.env.ZILLIZ_USERNAME,
+    password: process.env.ZILLIZ_PASSWORD,
+    ssl: true
+  },
+  collection: "my_collection"
+});
+```
+
+## Collection Management
+
+Milvus automatically creates collections with this schema:
+
+```typescript
+{
+  fields: [
+    {
+      name: "id",
+      data_type: DataType.VarChar,
+      is_primary_key: true,
+      max_length: 200
+    },
+    {
+      name: "embedding",
+      data_type: DataType.FloatVector,
+      dim: 1536
+    },
+    {
+      name: "content",
+      data_type: DataType.VarChar,
+      max_length: 9000
+    },
+    {
+      name: "metadata",
+      data_type: DataType.JSON
+    }
+  ]
+}
+```
+
+## Querying
+
+### Basic Query
+
+```typescript
+const index = await VectorStoreIndex.fromVectorStore(vectorStore);
+
+const retriever = index.asRetriever({
+  similarityTopK: 5
+});
+
+const nodes = await retriever.retrieve("query text");
+
+nodes.forEach(node => {
+  console.log(`Score: ${node.score}`);
+  console.log(`Text: ${node.node.text}`);
+});
+```
+
+### Metadata Filtering
+
+```typescript
+import { MetadataFilters, FilterCondition } from "@llamaindex/core/vector-store";
+
+const documents = [
+  new Document({
+    text: "Doc 1",
+    metadata: { category: "tech", year: 2023 }
+  }),
+  new Document({
+    text: "Doc 2",
+    metadata: { category: "science", year: 2024 }
+  })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+const retriever = index.asRetriever({
+  filters: new MetadataFilters({
+    filters: [
+      { key: "category", value: "tech", operator: "==" },
+      { key: "year", value: 2023, operator: ">=" }
+    ],
+    condition: FilterCondition.AND
+  })
+});
+
+const nodes = await retriever.retrieve("query");
+```
+
+## Supported Filter Operators
+
+Milvus supports:
+
+- `==` - Equal
+- `!=` - Not equal
+- `<` - Less than
+- `<=` - Less than or equal
+- `>` - Greater than
+- `>=` - Greater than or equal
+- `in` - Value in array
+- `nin` - Value not in array (converted to multiple `!=` checks)
+
+## Managing Data
+
+### Add Documents
+
+```typescript
+const newDoc = new Document({ text: "New content" });
+await index.insert(newDoc);
+```
+
+### Delete by Document ID
+
+```typescript
+await vectorStore.delete(refDocId);
+```
+
+### Access Milvus Client
+
+```typescript
+const client = vectorStore.client();
+
+// Get collection info
+const collectionInfo = await client.describeCollection({
+  collection_name: "my_collection"
+});
+console.log("Collection info:", collectionInfo);
+
+// Get collection statistics
+const stats = await client.getCollectionStatistics({
+  collection_name: "my_collection"
+});
+console.log("Row count:", stats.data.row_count);
+```
+
+## Complete Example
+
+```typescript
+import { MilvusVectorStore } from "@llamaindex/milvus";
+import { VectorStoreIndex, Document, Settings } from "llamaindex";
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+
+// Configure settings
+Settings.llm = new OpenAI({ model: "gpt-4" });
+Settings.embedModel = new OpenAIEmbedding();
+
+// Create vector store
+const vectorStore = new MilvusVectorStore({
+  params: {
+    configOrAddress: process.env.MILVUS_ADDRESS || "http://localhost:19530",
+    username: process.env.MILVUS_USERNAME,
+    password: process.env.MILVUS_PASSWORD
+  },
+  collection: "technical_docs"
+});
+
+// Load documents
+const documents = [
+  new Document({
+    text: "Milvus is a cloud-native vector database...",
+    metadata: { source: "docs", category: "database" }
+  }),
+  new Document({
+    text: "LlamaIndex integrates with Milvus...",
+    metadata: { source: "tutorial", category: "integration" }
+  })
+];
+
+// Build index
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+// Query with filters
+const retriever = index.asRetriever({
+  similarityTopK: 3,
+  filters: new MetadataFilters({
+    filters: [
+      { key: "category", value: "database", operator: "==" }
+    ]
+  })
+});
+
+const nodes = await retriever.retrieve("vector database");
+console.log(nodes);
+```
+
+## Index Types
+
+Milvus supports various index types for different use cases:
+
+- **FLAT**: Exact search (best for small datasets)
+- **IVF_FLAT**: Inverted file with flat compression
+- **IVF_SQ8**: IVF with scalar quantization
+- **IVF_PQ**: IVF with product quantization
+- **HNSW**: Hierarchical Navigable Small World graph (best for high recall)
+- **ANNOY**: Approximate Nearest Neighbors Oh Yeah
+
+## Performance Tuning
+
+### Custom Collection Configuration
+
+```typescript
+import { MilvusClient, DataType } from "@zilliz/milvus2-sdk-node";
+
+const client = new MilvusClient({ address: "localhost:19530" });
+
+// Create collection with custom schema
+await client.createCollection({
+  collection_name: "custom_collection",
+  fields: [
+    {
+      name: "id",
+      data_type: DataType.VarChar,
+      is_primary_key: true,
+      max_length: 100
+    },
+    {
+      name: "embedding",
+      data_type: DataType.FloatVector,
+      dim: 1536
+    },
+    {
+      name: "content",
+      data_type: DataType.VarChar,
+      max_length: 65535
+    },
+    {
+      name: "metadata",
+      data_type: DataType.JSON
+    }
+  ]
+});
+
+// Create index
+await client.createIndex({
+  collection_name: "custom_collection",
+  field_name: "embedding",
+  index_type: "HNSW",
+  metric_type: "COSINE",
+  params: { M: 16, efConstruction: 256 }
+});
+```
+
+## Best Practices
+
+1. **Choose appropriate index**: HNSW for high recall, IVF for speed
+2. **Use Zilliz Cloud for production**: Managed, scalable solution
+3. **Tune index parameters**: Adjust M and efConstruction for HNSW
+4. **Monitor memory**: Milvus loads indexes into memory
+5. **Batch operations**: Insert documents in batches for better performance
+6. **Regular compaction**: Run compaction to optimize storage
+
+## Troubleshooting
+
+### Connection Refused
+
+Ensure Milvus is running:
+
+```bash
+docker ps | grep milvus
+```
+
+### Collection Already Exists
+
+Milvus auto-creates collections. To use existing collection:
+
+```typescript
+const vectorStore = new MilvusVectorStore({
+  params: { configOrAddress: "http://localhost:19530" },
+  collection: "existing_collection"
+});
+```
+
+### Dimension Mismatch
+
+Ensure embedding dimensions match:
+
+```typescript
+import { OpenAIEmbedding } from "@llamaindex/openai";
+
+// text-embedding-3-small: 1536 dimensions (default)
+const embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-small"
+});
+
+// Milvus collection will auto-create with 1536 dimensions
+```
+
+## See Also
+
+- [Milvus Documentation](https://milvus.io/docs)
+- [Zilliz Cloud](https://cloud.zilliz.com)
+- [Vector Store Index](/api/llamaindex/indices)
+- [Core Schema](/api/core/schema)

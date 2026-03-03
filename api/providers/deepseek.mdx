@@ -1,0 +1,351 @@
+---
+title: "DeepSeek"
+description: "DeepSeek LLM provider for coding and chat"
+icon: "code"
+---
+
+## Overview
+
+DeepSeek provides specialized LLMs optimized for coding and general chat. The provider extends OpenAI's interface with DeepSeek's API endpoints and supports 128K context windows.
+
+## Installation
+
+```bash
+npm install @llamaindex/deepseek
+```
+
+## Basic Usage
+
+```typescript
+import { DeepSeekLLM } from "@llamaindex/deepseek";
+
+const llm = new DeepSeekLLM({
+  model: "deepseek-coder",
+  apiKey: process.env.DEEPSEEK_API_KEY
+});
+
+const response = await llm.chat({
+  messages: [
+    { role: "user", content: "Write a Python function to calculate Fibonacci numbers" }
+  ]
+});
+
+console.log(response.message.content);
+```
+
+## Constructor Options
+
+<ParamField path="model" type="DeepSeekModelName" default="deepseek-coder">
+  DeepSeek model name: `"deepseek-coder"` or `"deepseek-chat"`
+</ParamField>
+
+<ParamField path="apiKey" type="string">
+  DeepSeek API key (defaults to `DEEPSEEK_API_KEY` env variable)
+</ParamField>
+
+<ParamField path="temperature" type="number">
+  Sampling temperature
+</ParamField>
+
+<ParamField path="maxTokens" type="number">
+  Maximum tokens in response
+</ParamField>
+
+<ParamField path="topP" type="number">
+  Nucleus sampling parameter
+</ParamField>
+
+<ParamField path="additionalSessionOptions" type="object">
+  Additional OpenAI client options (e.g., custom baseURL)
+</ParamField>
+
+## Supported Models
+
+### DeepSeek Coder
+
+```typescript
+const llm = new DeepSeekLLM({
+  model: "deepseek-coder"
+});
+```
+
+- **Context**: 128K tokens
+- **Optimized for**: Code generation, completion, debugging
+- **Use cases**: Writing code, explaining code, refactoring
+
+### DeepSeek Chat
+
+```typescript
+const llm = new DeepSeekLLM({
+  model: "deepseek-chat"
+});
+```
+
+- **Context**: 128K tokens
+- **Optimized for**: General conversation, reasoning
+- **Use cases**: Q&A, analysis, creative writing
+
+## Streaming
+
+```typescript
+const stream = await llm.chat({
+  messages: [{ role: "user", content: "Explain async/await in JavaScript" }],
+  stream: true
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.delta);
+}
+```
+
+## Function Calling
+
+DeepSeek supports function calling (tool use):
+
+```typescript
+import { tool } from "@llamaindex/core/tools";
+import { z } from "zod";
+
+const executeCodeTool = tool({
+  name: "execute_code",
+  description: "Execute Python code",
+  parameters: z.object({
+    code: z.string().describe("Python code to execute")
+  }),
+  execute: async ({ code }) => {
+    // Execute code safely
+    return "Output: 42";
+  }
+});
+
+const llm = new DeepSeekLLM({ model: "deepseek-coder" });
+
+const response = await llm.chat({
+  messages: [{ role: "user", content: "Calculate 6 * 7" }],
+  tools: [executeCodeTool]
+});
+```
+
+## Code Generation
+
+```typescript
+const llm = new DeepSeekLLM({ model: "deepseek-coder" });
+
+const response = await llm.chat({
+  messages: [
+    {
+      role: "system",
+      content: "You are an expert programmer. Write clean, efficient code."
+    },
+    {
+      role: "user",
+      content: "Create a React component for a todo list with TypeScript"
+    }
+  ]
+});
+```
+
+## Code Explanation
+
+```typescript
+const code = `
+function quickSort(arr) {
+  if (arr.length <= 1) return arr;
+  const pivot = arr[0];
+  const left = arr.slice(1).filter(x => x < pivot);
+  const right = arr.slice(1).filter(x => x >= pivot);
+  return [...quickSort(left), pivot, ...quickSort(right)];
+}
+`;
+
+const response = await llm.chat({
+  messages: [
+    {
+      role: "user",
+      content: `Explain how this code works:\n\n${code}`
+    }
+  ]
+});
+```
+
+## With LlamaIndex
+
+```typescript
+import { Settings, VectorStoreIndex } from "llamaindex";
+import { DeepSeekLLM } from "@llamaindex/deepseek";
+
+Settings.llm = new DeepSeekLLM({
+  model: "deepseek-coder"
+});
+
+const index = await VectorStoreIndex.fromDocuments(codeDocuments);
+const queryEngine = index.asQueryEngine();
+
+const response = await queryEngine.query({
+  query: "How does the authentication module work?"
+});
+```
+
+## Convenience Function
+
+```typescript
+import { deepseek } from "@llamaindex/deepseek";
+
+const llm = deepseek({
+  model: "deepseek-chat",
+  temperature: 0.7
+});
+```
+
+## Configuration
+
+### Environment Variables
+
+```bash
+DEEPSEEK_API_KEY=sk-...
+```
+
+### Custom Base URL
+
+```typescript
+const llm = new DeepSeekLLM({
+  additionalSessionOptions: {
+    baseURL: "https://custom-deepseek-endpoint.com/v1"
+  }
+});
+```
+
+Default base URL: `https://api.deepseek.com/v1`
+
+### Global Settings
+
+```typescript
+import { Settings } from "llamaindex";
+import { DeepSeekLLM } from "@llamaindex/deepseek";
+
+Settings.llm = new DeepSeekLLM({
+  model: "deepseek-coder"
+});
+```
+
+## Model Selection Guide
+
+| Use Case | Recommended Model | Why |
+|----------|-------------------|----- |
+| Code generation | deepseek-coder | Optimized for programming |
+| Code review | deepseek-coder | Understands code patterns |
+| General Q&A | deepseek-chat | Better conversational ability |
+| Documentation | deepseek-chat | Natural language generation |
+| Debugging | deepseek-coder | Code-specific reasoning |
+
+## Long Context Support
+
+Both models support 128K context windows:
+
+```typescript
+const llm = new DeepSeekLLM({ model: "deepseek-coder" });
+
+// Analyze large codebase
+const response = await llm.chat({
+  messages: [
+    {
+      role: "user",
+      content: `Analyze this codebase:\n\n${largeCodebase}\n\nWhat improvements can be made?`
+    }
+  ]
+});
+```
+
+## Error Handling
+
+```typescript
+try {
+  const response = await llm.chat({ messages });
+} catch (error) {
+  if (error.message.includes("DEEPSEEK_API_KEY")) {
+    console.error("API key not set or invalid");
+  } else if (error.status === 429) {
+    console.error("Rate limit exceeded");
+  } else {
+    console.error("API error:", error.message);
+  }
+}
+```
+
+## Tool Calling Support
+
+Check if tool calling is supported:
+
+```typescript
+const llm = new DeepSeekLLM({ model: "deepseek-coder" });
+
+console.log(llm.supportToolCall); // true
+```
+
+## Best Practices
+
+1. **Use deepseek-coder for code**: Better results for programming tasks
+2. **Use deepseek-chat for general**: Better for non-code tasks
+3. **Leverage long context**: Use full 128K for large codebases
+4. **Provide context**: Include relevant code snippets
+5. **Use system messages**: Guide the model's behavior
+6. **Enable streaming**: Better UX for long generations
+
+## Example: Code Review Assistant
+
+```typescript
+import { DeepSeekLLM } from "@llamaindex/deepseek";
+
+const llm = new DeepSeekLLM({ model: "deepseek-coder" });
+
+async function reviewCode(code: string, language: string) {
+  const response = await llm.chat({
+    messages: [
+      {
+        role: "system",
+        content: "You are a senior code reviewer. Provide constructive feedback on code quality, performance, and best practices."
+      },
+      {
+        role: "user",
+        content: `Review this ${language} code:\n\n${code}`
+      }
+    ]
+  });
+
+  return response.message.content;
+}
+
+const feedback = await reviewCode(myCode, "TypeScript");
+console.log(feedback);
+```
+
+## Example: Documentation Generator
+
+```typescript
+import { DeepSeekLLM } from "@llamaindex/deepseek";
+
+const llm = new DeepSeekLLM({ model: "deepseek-coder" });
+
+async function generateDocs(code: string) {
+  const response = await llm.chat({
+    messages: [
+      {
+        role: "user",
+        content: `Generate comprehensive documentation for this code:\n\n${code}`
+      }
+    ]
+  });
+
+  return response.message.content;
+}
+```
+
+## Pricing
+
+DeepSeek offers competitive pricing. Check [DeepSeek pricing](https://www.deepseek.com/pricing) for current rates.
+
+## See Also
+
+- [Core LLM API](/api/core/llms)
+- [DeepSeek Documentation](https://platform.deepseek.com/docs)
+- [Function Calling Guide](/guides/function-calling)

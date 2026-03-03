@@ -1,0 +1,201 @@
+---
+title: "Cohere"
+description: "Cohere reranking provider for improving search relevance"
+icon: "ranking-star"
+---
+
+## Overview
+
+The Cohere provider integrates Cohere's reranking API with LlamaIndex.TS to improve the relevance of search results. Reranking is a powerful technique to reorder retrieved documents based on their relevance to a query.
+
+## Installation
+
+```bash
+npm install @llamaindex/cohere
+```
+
+## Basic Usage
+
+```typescript
+import { CohereRerank } from "@llamaindex/cohere";
+
+const reranker = new CohereRerank({
+  apiKey: process.env.COHERE_API_KEY,
+  topN: 5,
+  model: "rerank-english-v2.0"
+});
+
+// Use as a node postprocessor
+const rerankedNodes = await reranker.postprocessNodes(nodes, query);
+```
+
+## Constructor Options
+
+<ParamField path="apiKey" type="string" required>
+  Cohere API key (no environment variable default - must be provided)
+</ParamField>
+
+<ParamField path="topN" type="number" default={2}>
+  Number of top results to return after reranking
+</ParamField>
+
+<ParamField path="model" type="string" default="rerank-english-v2.0">
+  Cohere rerank model to use
+</ParamField>
+
+<ParamField path="baseUrl" type="string">
+  Optional custom API endpoint URL
+</ParamField>
+
+<ParamField path="timeout" type="number">
+  Request timeout in seconds
+</ParamField>
+
+## Supported Models
+
+### Rerank Models
+
+- `rerank-english-v2.0`: General-purpose English reranking (default)
+- `rerank-multilingual-v2.0`: Multilingual reranking support
+- `rerank-english-v3.0`: Latest English model
+- `rerank-multilingual-v3.0`: Latest multilingual model
+
+## With Query Engine
+
+```typescript
+import { VectorStoreIndex } from "llamaindex";
+import { CohereRerank } from "@llamaindex/cohere";
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+
+const reranker = new CohereRerank({
+  apiKey: process.env.COHERE_API_KEY,
+  topN: 3,
+  model: "rerank-english-v3.0"
+});
+
+const queryEngine = index.asQueryEngine({
+  nodePostprocessors: [reranker]
+});
+
+const response = await queryEngine.query({
+  query: "What are the main features?"
+});
+```
+
+## With Retriever
+
+```typescript
+import { VectorStoreIndex } from "llamaindex";
+import { CohereRerank } from "@llamaindex/cohere";
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+const retriever = index.asRetriever({ similarityTopK: 10 });
+
+const reranker = new CohereRerank({
+  apiKey: process.env.COHERE_API_KEY,
+  topN: 5
+});
+
+// Retrieve initial results
+const nodes = await retriever.retrieve({ query: "user query" });
+
+// Rerank for better relevance
+const rerankedNodes = await reranker.postprocessNodes(
+  nodes,
+  "user query"
+);
+```
+
+## Multilingual Reranking
+
+```typescript
+const reranker = new CohereRerank({
+  apiKey: process.env.COHERE_API_KEY,
+  topN: 5,
+  model: "rerank-multilingual-v3.0"
+});
+
+const rerankedNodes = await reranker.postprocessNodes(
+  nodes,
+  "Quelles sont les principales caractéristiques?" // French query
+);
+```
+
+## Custom Base URL
+
+```typescript
+const reranker = new CohereRerank({
+  apiKey: process.env.COHERE_API_KEY,
+  baseUrl: "https://custom-cohere-endpoint.com",
+  topN: 3
+});
+```
+
+## Configuration
+
+### Environment Variables
+
+```bash
+COHERE_API_KEY=your-api-key-here
+```
+
+Note: Unlike other providers, the Cohere package does not automatically read from environment variables. You must explicitly pass the API key.
+
+## How Reranking Works
+
+1. **Initial Retrieval**: Your retriever fetches top-K documents (e.g., 10-20)
+2. **Reranking**: Cohere's model re-scores each document for relevance
+3. **Top-N Selection**: Returns only the most relevant N documents
+4. **Score Update**: Updates each node's score to the relevance score
+
+```typescript
+// Before reranking: 10 documents with embedding similarity scores
+const initialNodes = await retriever.retrieve({ query, similarityTopK: 10 });
+
+// After reranking: 3 most relevant documents with Cohere relevance scores
+const reranker = new CohereRerank({ apiKey, topN: 3 });
+const finalNodes = await reranker.postprocessNodes(initialNodes, query);
+```
+
+## Performance Tips
+
+1. **Retrieve more, rerank to fewer**: Retrieve 10-20 documents, rerank to top 3-5
+2. **Use for complex queries**: Most beneficial when semantic search alone isn't sufficient
+3. **Choose right model**: v3.0 models offer better quality, v2.0 is faster
+4. **Set appropriate timeout**: For large document sets, increase timeout
+
+## Error Handling
+
+```typescript
+try {
+  const rerankedNodes = await reranker.postprocessNodes(nodes, query);
+} catch (error) {
+  if (error.message.includes("API key")) {
+    console.error("Invalid or missing Cohere API key");
+  } else {
+    console.error("Reranking failed:", error.message);
+  }
+}
+```
+
+## Use Cases
+
+- **Improve RAG quality**: Rerank retrieved documents before sending to LLM
+- **Multi-stage retrieval**: First pass with embeddings, second pass with reranking
+- **Cross-lingual search**: Use multilingual models for queries in different languages
+- **Semantic search refinement**: Improve relevance beyond vector similarity
+
+## Best Practices
+
+1. **Always provide a query**: Reranking requires a query string to work
+2. **Retrieve enough candidates**: Aim for 10-20 initial results for best reranking
+3. **Don't over-rerank**: Top 3-5 results usually sufficient for most use cases
+4. **Handle empty results**: Check if initial retrieval returns documents
+5. **Monitor costs**: Reranking adds API costs, use judiciously
+
+## See Also
+
+- [Core Postprocessor API](/api/core/postprocessors)
+- [Cohere Documentation](https://docs.cohere.com/docs/reranking)
+- [Query Engines](/api/core/query-engines)

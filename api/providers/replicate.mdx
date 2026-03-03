@@ -1,0 +1,285 @@
+---
+title: "Replicate"
+description: "Replicate LLM provider for running open-source models"
+icon: "clone"
+---
+
+## Overview
+
+Replicate provides on-demand inference for open-source LLMs including Llama, Mistral, and other models. The provider implements custom prompt formatting for different model families.
+
+## Installation
+
+```bash
+npm install @llamaindex/replicate
+```
+
+## Basic Usage
+
+```typescript
+import { ReplicateLLM } from "@llamaindex/replicate";
+
+const llm = new ReplicateLLM({
+  model: "llama-3-70b-instruct",
+  temperature: 0.7
+});
+
+const response = await llm.chat({
+  messages: [
+    { role: "user", content: "Explain neural networks" }
+  ]
+});
+
+console.log(response.message.content);
+```
+
+## Constructor Options
+
+<ParamField path="model" type="keyof typeof ALL_AVAILABLE_REPLICATE_MODELS" default="llama-3-70b-instruct">
+  Replicate model name from available models
+</ParamField>
+
+<ParamField path="temperature" type="number" default={0.1}>
+  Sampling temperature (minimum 0.01 for Replicate)
+</ParamField>
+
+<ParamField path="topP" type="number" default={1}>
+  Nucleus sampling parameter (Llama 3 defaults to 0.9)
+</ParamField>
+
+<ParamField path="maxTokens" type="number">
+  Maximum tokens in response (defaults to model's context window)
+</ParamField>
+
+<ParamField path="chatStrategy" type="ReplicateChatStrategy">
+  Chat prompt formatting strategy (auto-detected from model)
+</ParamField>
+
+<ParamField path="replicateSession" type="ReplicateSession">
+  Custom Replicate session with API token
+</ParamField>
+
+<ParamField path="noWarn" type="boolean">
+  Suppress default model warning
+</ParamField>
+
+## Supported Models
+
+### Llama 3
+
+- `llama-3-70b-instruct`: 70B parameter, 8K context (default)
+- `llama-3-8b-instruct`: 8B parameter, 8K context
+
+### Llama 2
+
+- `Llama-2-70b-chat-4bit`: 70B 4-bit quantized, 4K context
+- `Llama-2-70b-chat-old`: 70B old version, 4K context
+- `Llama-2-13b-chat-4bit`: 13B 4-bit quantized, 4K context
+- `Llama-2-13b-chat-old`: 13B old version, 4K context
+- `Llama-2-7b-chat-4bit`: 7B 4-bit quantized, 4K context
+- `Llama-2-7b-chat-old`: 7B old version, 4K context
+
+## Chat Strategies
+
+Replicate uses different prompt formats for different model versions:
+
+```typescript
+import { ReplicateChatStrategy } from "@llamaindex/replicate";
+
+const llm = new ReplicateLLM({
+  model: "llama-3-70b-instruct",
+  chatStrategy: ReplicateChatStrategy.LLAMA3  // Auto-detected
+});
+```
+
+Available strategies:
+
+- `LLAMA3`: Llama 3 format with special tokens
+- `META`: Standard Llama 2 format
+- `METAWBOS`: Llama 2 with BOS/EOS tokens
+- `A16Z`: A16Z-Infra format
+- `REPLICATE4BIT`: 4-bit model format
+- `REPLICATE4BITWNEWLINES`: 4-bit format with newlines
+
+## Streaming
+
+```typescript
+const stream = await llm.chat({
+  messages: [{ role: "user", content: "Write a story about space exploration" }],
+  stream: true
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.delta);
+}
+```
+
+## Custom API Token
+
+```typescript
+import { ReplicateSession } from "@llamaindex/replicate";
+
+const session = new ReplicateSession("your-api-token");
+
+const llm = new ReplicateLLM({
+  model: "llama-3-70b-instruct",
+  replicateSession: session
+});
+```
+
+## With LlamaIndex
+
+```typescript
+import { Settings, VectorStoreIndex } from "llamaindex";
+import { ReplicateLLM } from "@llamaindex/replicate";
+
+Settings.llm = new ReplicateLLM({
+  model: "llama-3-70b-instruct",
+  temperature: 0.1
+});
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+const queryEngine = index.asQueryEngine();
+
+const response = await queryEngine.query({
+  query: "Summarize the main points"
+});
+```
+
+## Convenience Function
+
+```typescript
+import { replicate } from "@llamaindex/replicate";
+
+const llm = replicate({
+  model: "llama-3-8b-instruct",
+  noWarn: true
+});
+```
+
+## Configuration
+
+### Environment Variables
+
+```bash
+REPLICATE_API_TOKEN=your-api-token-here
+```
+
+### Global Settings
+
+```typescript
+import { Settings } from "llamaindex";
+import { ReplicateLLM } from "@llamaindex/replicate";
+
+Settings.llm = new ReplicateLLM({
+  model: "llama-3-70b-instruct"
+});
+```
+
+## Model Metadata
+
+Access model information:
+
+```typescript
+const llm = new ReplicateLLM({ model: "llama-3-70b-instruct" });
+
+console.log(llm.metadata);
+// {
+//   model: "llama-3-70b-instruct",
+//   temperature: 0.1,
+//   topP: 0.9,
+//   maxTokens: 8192,
+//   contextWindow: 8192,
+//   tokenizer: undefined,
+//   structuredOutput: false
+// }
+```
+
+## System Messages
+
+System messages are handled differently based on chat strategy:
+
+```typescript
+// Llama 3 format
+const response = await llm.chat({
+  messages: [
+    { role: "system", content: "You are a helpful assistant." },
+    { role: "user", content: "Hello!" }
+  ]
+});
+```
+
+## Model Selection Guide
+
+| Use Case | Recommended Model | Why |
+|----------|-------------------|----- |
+| Best quality | llama-3-70b-instruct | Latest, most capable |
+| Balanced | llama-3-8b-instruct | Good quality, faster |
+| Memory constrained | Llama-2-7b-chat-4bit | Quantized, smaller |
+| Legacy systems | Llama-2-70b-chat-old | Stable, well-tested |
+
+## Performance Considerations
+
+1. **Cold starts**: First request may take longer
+2. **Streaming**: Better UX for long responses
+3. **4-bit models**: Faster but slightly lower quality
+4. **Context window**: Llama 3 has 8K, Llama 2 has 4K
+
+## Error Handling
+
+```typescript
+try {
+  const response = await llm.chat({ messages });
+} catch (error) {
+  if (error.message.includes("REPLICATE_API_TOKEN")) {
+    console.error("API token not set");
+  } else {
+    console.error("API error:", error.message);
+  }
+}
+```
+
+## Legacy Aliases
+
+For backwards compatibility:
+
+```typescript
+import { LlamaDeuce, DeuceChatStrategy } from "@llamaindex/replicate";
+
+// LlamaDeuce is an alias for ReplicateLLM
+const llm = new LlamaDeuce({ model: "llama-3-70b-instruct" });
+```
+
+## Advanced: Custom Prompt Formatting
+
+The provider handles complex prompt formatting automatically:
+
+```typescript
+// Llama 3 format example
+// Input messages are converted to:
+// <|begin_of_text|><|start_header_id|>user<|end_header_id|>
+// message<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+// Llama 2 format example
+// Input messages are converted to:
+// <s>[INST] <<SYS>>system<</SYS>> message [/INST]
+```
+
+## Best Practices
+
+1. **Use Llama 3 for new projects**: Better quality and 8K context
+2. **Set appropriate maxTokens**: Default can be high, adjust for your use case
+3. **Handle cold starts**: First request takes longer, consider warming up
+4. **Use streaming**: Better UX for chat applications
+5. **Choose right model size**: Balance quality vs. cost and speed
+6. **Leverage system messages**: Properly format instructions
+
+## Pricing
+
+Replicate charges per second of compute time. Check [Replicate pricing](https://replicate.com/pricing) for current rates.
+
+## See Also
+
+- [Core LLM API](/api/core/llms)
+- [Replicate Documentation](https://replicate.com/docs)
+- [Replicate Models](https://replicate.com/explore)

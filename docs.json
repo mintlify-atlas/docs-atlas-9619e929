@@ -124,7 +124,12 @@
               "api/providers/ollama",
               "api/providers/groq",
               "api/providers/google",
-              "api/providers/mistral"
+              "api/providers/mistral",
+              "api/providers/cohere",
+              "api/providers/together",
+              "api/providers/replicate",
+              "api/providers/deepseek",
+              "api/providers/fireworks"
             ]
           },
           {
@@ -133,7 +138,12 @@
               "api/storage/pinecone",
               "api/storage/chroma",
               "api/storage/qdrant",
-              "api/storage/weaviate"
+              "api/storage/weaviate",
+              "api/storage/mongodb",
+              "api/storage/postgres",
+              "api/storage/milvus",
+              "api/storage/astra",
+              "api/storage/azure"
             ]
           },
           {
