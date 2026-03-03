@@ -1,0 +1,232 @@
+---
+title: Postprocessors
+description: Filter, rerank, and transform retrieved results
+---
+
+Postprocessors allow you to filter, rerank, and transform the results returned by retrievers before they're sent to the LLM. They're essential for improving the quality and relevance of your RAG responses.
+
+## Overview
+
+Postprocessors implement the `BaseNodePostprocessor` interface and process `NodeWithScore` arrays returned from retrievers. They can:
+
+- Filter nodes based on similarity scores
+- Rerank results using external models
+- Replace node content with metadata
+- Apply custom transformations
+
+## Similarity Cutoff
+
+Filter out nodes below a similarity threshold:
+
+```typescript
+import { SimilarityPostprocessor } from "llamaindex";
+
+const postprocessor = new SimilarityPostprocessor({
+  similarityCutoff: 0.7, // Only keep nodes with score >= 0.7
+});
+
+const retriever = vectorIndex.asRetriever({
+  similarityTopK: 10,
+});
+
+const queryEngine = vectorIndex.asQueryEngine({
+  retriever,
+  nodePostprocessors: [postprocessor],
+});
+
+const response = await queryEngine.query({
+  query: "What is LlamaIndex?",
+});
+```
+
+Nodes with a similarity score below `0.7` will be filtered out, even if they're in the top K results.
+
+## Reranking
+
+Rerankers use specialized models to reorder results based on relevance to the query.
+
+### JinaAI Reranker
+
+Use Jina AI's reranking models:
+
+```typescript
+import { JinaAIReranker } from "llamaindex/postprocessors";
+
+const reranker = new JinaAIReranker({
+  model: "jina-reranker-v1-base-en",
+  topN: 5, // Return top 5 after reranking
+});
+
+const queryEngine = vectorIndex.asQueryEngine({
+  retriever: vectorIndex.asRetriever({ similarityTopK: 20 }),
+  nodePostprocessors: [reranker],
+});
+```
+
+**Environment Variables:**
+
+```bash
+JINAAI_API_KEY=your_api_key
+```
+
+**Available Models:**
+
+- `jina-reranker-v1-base-en` - English base model
+- `jina-reranker-v1-turbo-en` - Faster English model
+
+### MixedbreadAI Reranker
+
+For Mixedbread AI reranking:
+
+```typescript
+import { MixedbreadAIReranker } from "@llamaindex/mixedbread";
+
+const reranker = new MixedbreadAIReranker({
+  model: "mixedbread-ai/mxbai-rerank-large-v1",
+  topN: 5,
+});
+```
+
+## Metadata Replacement
+
+Replace node content with metadata values:
+
+```typescript
+import { MetadataReplacementPostProcessor } from "llamaindex";
+
+const postprocessor = new MetadataReplacementPostProcessor(
+  "window" // Metadata key to use as content
+);
+
+const queryEngine = vectorIndex.asQueryEngine({
+  nodePostprocessors: [postprocessor],
+});
+```
+
+This is useful when you store window text or summaries in metadata and want to use those instead of the original node content.
+
+## Combining Postprocessors
+
+Chain multiple postprocessors for sophisticated filtering:
+
+```typescript
+import {
+  SimilarityPostprocessor,
+  JinaAIReranker,
+} from "llamaindex";
+
+const postprocessors = [
+  // First: Filter by similarity
+  new SimilarityPostprocessor({
+    similarityCutoff: 0.5,
+  }),
+  // Then: Rerank remaining results
+  new JinaAIReranker({
+    topN: 3,
+  }),
+];
+
+const queryEngine = vectorIndex.asQueryEngine({
+  retriever: vectorIndex.asRetriever({ similarityTopK: 20 }),
+  nodePostprocessors: postprocessors,
+});
+```
+
+Postprocessors are applied in order, so plan your chain strategically.
+
+## Custom Postprocessors
+
+Implement custom logic by extending `BaseNodePostprocessor`:
+
+```typescript
+import { BaseNodePostprocessor } from "@llamaindex/core/postprocessor";
+import { NodeWithScore } from "@llamaindex/core/schema";
+
+class DiversityPostprocessor implements BaseNodePostprocessor {
+  async postprocessNodes(
+    nodes: NodeWithScore[],
+    query?: string
+  ): Promise<NodeWithScore[]> {
+    // Remove duplicate or very similar nodes
+    const uniqueNodes: NodeWithScore[] = [];
+    const seenContent = new Set<string>();
+
+    for (const nodeWithScore of nodes) {
+      const content = nodeWithScore.node.getContent();
+      const normalized = content.toLowerCase().trim();
+      
+      if (!seenContent.has(normalized)) {
+        seenContent.add(normalized);
+        uniqueNodes.push(nodeWithScore);
+      }
+    }
+
+    return uniqueNodes;
+  }
+}
+
+// Use the custom postprocessor
+const queryEngine = vectorIndex.asQueryEngine({
+  nodePostprocessors: [new DiversityPostprocessor()],
+});
+```
+
+## Metadata Filtering
+
+While not technically postprocessors, metadata filters are applied at retrieval time:
+
+```typescript
+import { MetadataFilters } from "@llamaindex/core/vector-store";
+
+const retriever = vectorIndex.asRetriever({
+  filters: {
+    filters: [
+      { key: "author", value: "John Doe", operator: "==" },
+      { key: "year", value: 2023, operator: ">=" },
+    ],
+    condition: "and",
+  },
+});
+```
+
+**Filter Operators:**
+
+- `==` - Equals
+- `!=` - Not equals
+- `>` - Greater than
+- `<` - Less than
+- `>=` - Greater than or equal
+- `<=` - Less than or equal
+- `in` - In array
+- `nin` - Not in array
+
+## Best Practices
+
+**Retrieval Strategy:**
+
+1. Retrieve more results than needed (e.g., `similarityTopK: 20`)
+2. Apply similarity cutoff to remove poor matches
+3. Use reranker to select best results (e.g., `topN: 3`)
+
+**Performance:**
+
+- Reranking adds latency but improves relevance
+- Filter before reranking to reduce reranking costs
+- Use metadata filters at retrieval time when possible
+
+**Quality:**
+
+- Tune similarity cutoffs based on your embedding model
+- Experiment with different reranking models
+- Monitor which postprocessors provide the most value
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Response Synthesizers" icon="wand-magic-sparkles" href="/advanced/response-synthesizers">
+    Learn how to generate responses from retrieved nodes
+  </Card>
+  <Card title="Evaluation" icon="chart-line" href="/advanced/evaluation">
+    Evaluate and improve your RAG pipeline
+  </Card>
+</CardGroup>

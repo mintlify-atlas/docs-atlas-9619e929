@@ -1,0 +1,459 @@
+---
+title: Multi-Runtime Support
+description: Use LlamaIndex.TS across Node.js, Deno, Bun, Cloudflare Workers, and Vercel Edge Runtime
+---
+
+LlamaIndex.TS is designed to work seamlessly across all major JavaScript runtimes. This is achieved through runtime-specific entry points and the `@llamaindex/env` abstraction layer.
+
+## Supported Runtimes
+
+<CardGroup cols={3}>
+  <Card title="Node.js" icon="node-js">
+    Full-featured support with filesystem access
+  </Card>
+  <Card title="Deno" icon="server">
+    Native ESM with secure permissions
+  </Card>
+  <Card title="Bun" icon="rabbit">
+    Fast runtime with Node.js compatibility
+  </Card>
+  <Card title="Cloudflare Workers" icon="cloud">
+    Edge runtime with Workers API
+  </Card>
+  <Card title="Vercel Edge" icon="bolt">
+    Vercel Edge Runtime for serverless
+  </Card>
+  <Card title="Browser" icon="browser">
+    Limited support for client-side use cases
+  </Card>
+</CardGroup>
+
+## Runtime-Specific Entry Points
+
+The `llamaindex` package provides different entry points that are automatically selected based on your runtime:
+
+```json package.json conditional exports
+{
+  "exports": {
+    ".": {
+      "react-server": {
+        "types": "./dist/type/index.react-server.d.ts",
+        "default": "./dist/index.react-server.js"
+      },
+      "workerd": {
+        "types": "./dist/type/index.workerd.d.ts",
+        "default": "./dist/index.workerd.js"
+      },
+      "edge-light": {
+        "types": "./dist/type/index.edge.d.ts",
+        "default": "./dist/index.edge.js"
+      },
+      "import": {
+        "types": "./dist/type/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/type/index.d.cts",
+        "default": "./dist/cjs/index.cjs"
+      }
+    }
+  }
+}
+```
+
+<Note>
+The correct entry point is automatically selected by your bundler or runtime based on export conditions.
+</Note>
+
+### Entry Point Mapping
+
+| Runtime | Export Condition | Entry Point File |
+|---------|-----------------|------------------|
+| Node.js ESM | `import` | `src/index.ts` |
+| Node.js CJS | `require` | `src/index.ts` (compiled to CJS) |
+| Cloudflare Workers | `workerd` | `src/index.workerd.ts` |
+| Vercel Edge | `edge-light` | `src/index.edge.ts` |
+| React Server Components | `react-server` | `src/index.react-server.ts` |
+| Deno/Bun | `import` | `src/index.ts` |
+
+## Environment Abstraction Layer
+
+The `@llamaindex/env` package provides a unified API across all runtimes:
+
+```typescript @llamaindex/env exports
+// Node.js runtime (index.ts)
+export { fs, path, createWriteStream, randomUUID, createHash } from 'node:*';
+export { AsyncLocalStorage } from './als/index.node.js';
+
+// Cloudflare Workers runtime (index.workerd.ts)
+export { AsyncLocalStorage } from './als/index.workerd.js';
+export { getEnv } from './utils/index.js';
+// No filesystem exports
+
+// Edge Runtime (index.edge-light.ts)
+export { AsyncLocalStorage } from './als/index.non-node.js';
+export * from './node-polyfill.js';  // Polyfills for Node APIs
+```
+
+<Info>
+`@llamaindex/env` handles all runtime differences internally, so you can write runtime-agnostic code.
+</Info>
+
+## Runtime-Specific Examples
+
+### Node.js
+
+<Tabs>
+  <Tab title="Full Features">
+    Node.js provides the complete LlamaIndex.TS feature set:
+
+    ```typescript Node.js with filesystem
+    import { VectorStoreIndex, SimpleDirectoryReader, Settings } from "llamaindex";
+    import { OpenAI } from "@llamaindex/openai";
+
+    Settings.llm = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    // File system access available
+    const reader = new SimpleDirectoryReader();
+    const documents = await reader.loadData({ directoryPath: "./docs" });
+
+    // Full index functionality
+    const index = await VectorStoreIndex.fromDocuments(documents);
+    const queryEngine = index.asQueryEngine();
+    
+    const response = await queryEngine.query({
+      query: "What is LlamaIndex?"
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Runtime Check">
+    ```typescript Verify Node.js runtime
+    import { process } from "@llamaindex/env";
+
+    if (typeof process !== "undefined" && process.versions?.node) {
+      console.log("Running in Node.js", process.versions.node);
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Cloudflare Workers
+
+<Tabs>
+  <Tab title="Worker Implementation">
+    ```typescript src/index.ts
+    // Cloudflare Workers automatically use index.workerd.ts entry point
+    interface Env {
+      OPENAI_API_KEY: string;
+    }
+
+    export default {
+      async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+        // Set environment variables from Workers env
+        const { setEnvs } = await import("@llamaindex/env");
+        setEnvs(env);
+        
+        // Dynamic imports for optimal bundle size
+        const { OpenAI, OpenAIAgent } = await import("@llamaindex/openai");
+        
+        const text = await request.text();
+        
+        const agent = new OpenAIAgent({
+          llm: new OpenAI({ apiKey: env.OPENAI_API_KEY }),
+          tools: [],
+        });
+        
+        const responseStream = await agent.chat({
+          stream: true,
+          message: text,
+        });
+        
+        // Return streaming response
+        const textEncoder = new TextEncoder();
+        const stream = responseStream.pipeThrough(
+          new TransformStream({
+            transform: (chunk, controller) => {
+              controller.enqueue(textEncoder.encode(chunk.delta));
+            },
+          })
+        );
+        
+        return new Response(stream);
+      },
+    };
+    ```
+  </Tab>
+  
+  <Tab title="wrangler.toml">
+    ```toml Cloudflare Workers config
+    name = "llamaindex-agent"
+    main = "src/index.ts"
+    compatibility_date = "2024-04-23"
+    compatibility_flags = ["nodejs_compat"]
+
+    [vars]
+    # Non-sensitive environment variables
+
+    # For secrets, use: wrangler secret put OPENAI_API_KEY
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+Cloudflare Workers has **no filesystem access**. Use in-memory data or external storage services.
+</Warning>
+
+### Vercel Edge Runtime
+
+<Tabs>
+  <Tab title="Next.js Route Handler">
+    ```typescript app/api/chat/route.ts
+    import { OpenAI } from "@llamaindex/openai";
+    import { Settings } from "llamaindex";
+
+    // Force Edge Runtime
+    export const runtime = "edge";
+
+    Settings.llm = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+
+    export async function POST(request: Request) {
+      const { message } = await request.json();
+      
+      const response = await Settings.llm.chat({
+        messages: [{ role: "user", content: message }],
+      });
+      
+      return Response.json(response);
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Runtime Detection">
+    ```typescript utils/llm.ts
+    import "llamaindex";
+
+    // Verify Edge Runtime
+    // @ts-expect-error EdgeRuntime is not defined
+    if (typeof EdgeRuntime !== "string") {
+      throw new Error("Expected to run in EdgeRuntime");
+    }
+    ```
+  </Tab>
+  
+  <Tab title="next.config.mjs">
+    ```javascript next.config.mjs
+    import { withLlamaIndex } from "llamaindex/next";
+
+    /** @type {import('next').NextConfig} */
+    const nextConfig = {
+      // Your Next.js config
+    };
+
+    export default withLlamaIndex(nextConfig);
+    ```
+  </Tab>
+</Tabs>
+
+### Deno
+
+```typescript Deno with import maps
+import { VectorStoreIndex, Document, Settings } from "npm:llamaindex";
+import { OpenAI } from "npm:@llamaindex/openai";
+
+Settings.llm = new OpenAI({ apiKey: Deno.env.get("OPENAI_API_KEY") });
+
+const documents = [
+  new Document({ text: "LlamaIndex is a data framework for LLMs" }),
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+const queryEngine = index.asQueryEngine();
+
+const response = await queryEngine.query({
+  query: "What is LlamaIndex?"
+});
+
+console.log(response.toString());
+```
+
+### Bun
+
+```typescript Bun runtime
+import { VectorStoreIndex, Settings } from "llamaindex";
+import { OpenAI } from "@llamaindex/openai";
+
+Settings.llm = new OpenAI({ apiKey: Bun.env.OPENAI_API_KEY });
+
+// Bun has fast file I/O
+const file = Bun.file("./document.txt");
+const text = await file.text();
+
+const documents = [new Document({ text })];
+const index = await VectorStoreIndex.fromDocuments(documents);
+```
+
+## Runtime Capabilities
+
+| Feature | Node.js | Deno | Bun | CF Workers | Vercel Edge | Browser |
+|---------|---------|------|-----|------------|-------------|----------|
+| File System | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Vector Indices | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ |
+| LLM Chat | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Streaming | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Embeddings | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ |
+| Agents | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ |
+| Async Local Storage | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Local Models | ✅ | ✅ | ✅ | ❌ | ❌ | ⚠️ |
+
+<Info>
+⚠️ = Limited support or requires specific configuration
+</Info>
+
+## Environment Variables
+
+### Node.js / Deno / Bun
+
+```bash .env
+OPENAI_API_KEY=sk-...
+PINECONE_API_KEY=...
+```
+
+```typescript Load with dotenv
+import "dotenv/config";
+import { Settings } from "llamaindex";
+import { OpenAI } from "@llamaindex/openai";
+
+Settings.llm = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+```
+
+### Cloudflare Workers
+
+```typescript Use setEnvs helper
+interface Env {
+  OPENAI_API_KEY: string;
+}
+
+export default {
+  async fetch(request: Request, env: Env) {
+    const { setEnvs } = await import("@llamaindex/env");
+    setEnvs(env);  // Makes env.* available via getEnv()
+    
+    // Now use environment variables
+    const { OpenAI } = await import("@llamaindex/openai");
+    const llm = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+  }
+};
+```
+
+### Vercel Edge Runtime
+
+```typescript Edge Runtime env
+// Environment variables available via process.env
+export const runtime = "edge";
+
+Settings.llm = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+```
+
+## Runtime Limitations
+
+<AccordionGroup>
+  <Accordion title="Cloudflare Workers">
+    **Limitations:**
+    - No file system access (use KV, R2, or D1 for storage)
+    - No native Node.js modules
+    - 1MB script size limit (use dynamic imports)
+    - CPU time limits per request
+    
+    **Workarounds:**
+    - Use `vectorStores` with external services (Pinecone, Qdrant)
+    - Dynamic imports to reduce initial bundle size
+    - Stream responses for long-running operations
+  </Accordion>
+  
+  <Accordion title="Vercel Edge Runtime">
+    **Limitations:**
+    - No file system access
+    - Limited Node.js API compatibility
+    - 1MB middleware size limit
+    - Cold start considerations
+    
+    **Best Practices:**
+    - Use `withLlamaIndex` Next.js plugin
+    - Leverage Vercel KV or external vector stores
+    - Keep dependencies minimal
+  </Accordion>
+  
+  <Accordion title="Browser">
+    **Limitations:**
+    - No file system access
+    - CORS restrictions for API calls
+    - Bundle size concerns
+    - No native crypto APIs in older browsers
+    
+    **Use Cases:**
+    - Client-side chat interfaces
+    - Browser-based document processing with FileReader API
+    - WebAssembly embeddings (limited)
+  </Accordion>
+</AccordionGroup>
+
+## AsyncLocalStorage
+
+LlamaIndex.TS uses AsyncLocalStorage for context-aware Settings:
+
+```typescript Settings context isolation
+import { Settings } from "llamaindex";
+import { OpenAI, Anthropic } from "@llamaindex/openai";
+
+// Different LLMs in different contexts
+Settings.withLLM(new OpenAI({ model: "gpt-4" }), async () => {
+  // This code uses GPT-4
+  const response = await Settings.llm.chat({ messages });
+});
+
+Settings.withLLM(new Anthropic({ model: "claude-3" }), async () => {
+  // This code uses Claude-3
+  const response = await Settings.llm.chat({ messages });
+});
+```
+
+<Info>
+AsyncLocalStorage is polyfilled for runtimes that don't have native support.
+</Info>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Dynamic Imports" icon="download">
+    In edge runtimes, use dynamic imports to reduce bundle size:
+    ```typescript
+    const { OpenAI } = await import("@llamaindex/openai");
+    ```
+  </Card>
+  
+  <Card title="Test Multiple Runtimes" icon="vials">
+    Validate your code works across target runtimes in CI/CD
+  </Card>
+  
+  <Card title="Handle Missing APIs" icon="shield">
+    Check for API availability before using runtime-specific features
+  </Card>
+  
+  <Card title="Optimize Bundle Size" icon="compress">
+    Use sub-module imports and tree-shaking for edge deployments
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Settings Configuration" icon="gear" href="/core/settings">
+    Learn how to configure global settings for your runtime
+  </Card>
+  <Card title="Data Flow" icon="arrows-turn-right" href="/core/data-flow">
+    Understand how data flows through the framework
+  </Card>
+</CardGroup>

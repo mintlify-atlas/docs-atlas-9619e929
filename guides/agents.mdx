@@ -1,0 +1,343 @@
+---
+title: "Building Agents"
+description: "Learn how to build intelligent agents with LlamaIndex.TS using the workflow API"
+---
+
+## What are Agents?
+
+Agents are autonomous systems that can:
+
+- **Reason** about complex tasks
+- **Use tools** to perform actions
+- **Make decisions** based on context
+- **Iterate** until reaching a goal
+
+Unlike simple query engines, agents can break down problems, call multiple tools, and chain operations together.
+
+<Warning>
+  The legacy ReAct agent APIs (`ReActAgent`, `LLMAgent`) are **deprecated**. Use the modern `@llamaindex/workflow` package for building agents.
+</Warning>
+
+## Modern Workflow-Based Agents
+
+LlamaIndex.TS now uses an event-driven workflow architecture for agents. This provides:
+
+- Better control flow
+- Easier debugging
+- More flexible agent patterns
+- Multi-agent orchestration
+
+### Installing the Workflow Package
+
+```bash
+npm install @llamaindex/workflow @llamaindex/openai
+```
+
+## Building Your First Agent
+
+<Steps>
+  <Step title="Define Your Tools">
+    Tools are functions that agents can call:
+
+    ```typescript
+    import { tool } from "llamaindex";
+    import { z } from "zod";
+
+    export const getWeatherTool = tool({
+      name: "get_weather",
+      description: "Get the current weather for a location",
+      parameters: z.object({
+        address: z.string().describe("The address")
+      }),
+      execute: ({ address }) => {
+        return `${address} is in a sunny location!`;
+      }
+    });
+    ```
+  </Step>
+
+  <Step title="Create the Agent">
+    Use the `agent()` helper to create a workflow-based agent:
+
+    ```typescript
+    import { openai } from "@llamaindex/openai";
+    import { agent } from "@llamaindex/workflow";
+
+    const weatherAgent = agent({
+      llm: openai({
+        model: "gpt-4o"
+      }),
+      tools: [getWeatherTool],
+      verbose: false
+    });
+    ```
+  </Step>
+
+  <Step title="Run the Agent">
+    Execute tasks and get results:
+
+    ```typescript
+    const result = await weatherAgent.run(
+      "What's the weather like in San Francisco?"
+    );
+
+    console.log(result.data.message);
+    ```
+  </Step>
+</Steps>
+
+## Complete Working Example
+
+Here's a full agent with tool usage:
+
+```typescript
+import { openai } from "@llamaindex/openai";
+import { agent } from "@llamaindex/workflow";
+import { tool } from "llamaindex";
+import { z } from "zod";
+
+// Define tools
+const getWeatherTool = tool({
+  name: "get_weather",
+  description: "Get the current weather for a location",
+  parameters: z.object({
+    address: z.string().describe("The address")
+  }),
+  execute: ({ address }) => {
+    return `${address} is in a sunny location!`;
+  }
+});
+
+const getUserInfoTool = tool({
+  name: "get_user_info",
+  description: "Get user information",
+  parameters: z.object({
+    userId: z.string().describe("The user id")
+  }),
+  execute: ({ userId }) => {
+    return `Name: Alex; Address: 1234 Main St, CA; User ID: ${userId}`;
+  }
+});
+
+async function main() {
+  // Create agent
+  const myAgent = agent({
+    llm: openai({
+      model: "gpt-4o"
+    }),
+    tools: [getWeatherTool, getUserInfoTool],
+    verbose: true
+  });
+
+  // Run a task
+  const result = await myAgent.run(
+    "What's the weather like in San Francisco?"
+  );
+  console.log(JSON.stringify(result, null, 2));
+
+  // Reuse state for follow-up questions
+  const followUp = await myAgent.run(
+    "Compare it with California?",
+    { state: result.data.state }
+  );
+  console.log(followUp.data.message);
+}
+
+main().catch(console.error);
+```
+
+## Multi-Agent Orchestration
+
+Build systems with multiple specialized agents:
+
+```typescript
+import { openai } from "@llamaindex/openai";
+import {
+  agent,
+  multiAgent,
+  agentToolCallEvent,
+  agentOutputEvent,
+  agentStreamEvent
+} from "@llamaindex/workflow";
+import { tool } from "llamaindex";
+import { z } from "zod";
+
+const llm = openai({ model: "gpt-4o-mini" });
+
+// Define specialized tools
+const temperatureConverterTool = tool({
+  description: "Convert a temperature from Fahrenheit to Celsius",
+  name: "fahrenheitToCelsius",
+  parameters: z.object({
+    temperature: z.number().describe("The temperature in Fahrenheit")
+  }),
+  execute: ({ temperature }) => {
+    return ((temperature - 32) * 5) / 9;
+  }
+});
+
+const temperatureFetcherTool = tool({
+  description: "Fetch the temperature (in Fahrenheit) for a city",
+  name: "fetchTemperature",
+  parameters: z.object({
+    city: z.string().describe("The city to fetch the temperature for")
+  }),
+  execute: ({ city }) => {
+    const temperature = Math.floor(Math.random() * 58) + 32;
+    return `The current temperature in ${city} is ${temperature}°F`;
+  }
+});
+
+async function main() {
+  // Create specialized agents
+  const converterAgent = agent({
+    name: "TemperatureConverterAgent",
+    description: "An agent that can convert temperatures from Fahrenheit to Celsius.",
+    tools: [temperatureConverterTool],
+    llm
+  });
+
+  const weatherAgent = agent({
+    name: "FetchWeatherAgent",
+    description: "An agent that can get the weather in a city.",
+    systemPrompt: "If you can't answer the user question, hand off to other agents.",
+    tools: [temperatureFetcherTool],
+    llm,
+    canHandoffTo: [converterAgent]  // Define handoff capability
+  });
+
+  // Create multi-agent workflow
+  const workflow = multiAgent({
+    agents: [weatherAgent, converterAgent],
+    rootAgent: weatherAgent,
+    verbose: true
+  });
+
+  // Stream agent events
+  const events = workflow.runStream(
+    "What is the weather in San Francisco in Celsius?"
+  );
+
+  for await (const event of events) {
+    if (agentToolCallEvent.include(event)) {
+      console.log("Tool call:", event.data);
+    } else if (agentOutputEvent.include(event)) {
+      console.log("Agent output:", event.data);
+    } else if (agentStreamEvent.include(event)) {
+      for (const chunk of event.data.delta) {
+        process.stdout.write(chunk);
+      }
+    }
+  }
+}
+
+main().catch(console.error);
+```
+
+## Agent Configuration
+
+### System Prompts
+
+Customize agent behavior:
+
+```typescript
+const agent = agent({
+  llm: openai({ model: "gpt-4o" }),
+  tools: [myTool],
+  systemPrompt: "You are a helpful assistant that always explains your reasoning."
+});
+```
+
+### Verbose Mode
+
+Enable detailed logging:
+
+```typescript
+const agent = agent({
+  llm: openai({ model: "gpt-4o" }),
+  tools: [myTool],
+  verbose: true  // Shows tool calls and reasoning
+});
+```
+
+### Agent Handoffs
+
+Define which agents can delegate to others:
+
+```typescript
+const specialistAgent = agent({
+  name: "SpecialistAgent",
+  tools: [specializedTool],
+  llm
+});
+
+const generalAgent = agent({
+  name: "GeneralAgent",
+  tools: [generalTool],
+  llm,
+  canHandoffTo: [specialistAgent]  // Can delegate to specialist
+});
+```
+
+## Creating Custom Tools
+
+Tools use Zod schemas for type-safe parameters:
+
+```typescript
+import { tool } from "llamaindex";
+import { z } from "zod";
+
+const searchTool = tool({
+  name: "search_database",
+  description: "Search a database for information",
+  parameters: z.object({
+    query: z.string().describe("The search query"),
+    limit: z.number().optional().describe("Max results to return"),
+    category: z.enum(["users", "products", "orders"])
+      .describe("Category to search in")
+  }),
+  execute: async ({ query, limit = 10, category }) => {
+    // Implement your search logic
+    const results = await searchDatabase(query, category, limit);
+    return JSON.stringify(results);
+  }
+});
+```
+
+## Migrating from Legacy Agents
+
+If you're using the old `ReActAgent` or `LLMAgent`:
+
+<Warning>
+  **Before (Deprecated):**
+  ```typescript
+  import { ReActAgent } from "llamaindex";
+
+  const agent = new ReActAgent({ tools });
+  const response = await agent.chat({ message: "Hello" });
+  ```
+
+  **After (Recommended):**
+  ```typescript
+  import { agent } from "@llamaindex/workflow";
+  import { openai } from "@llamaindex/openai";
+
+  const myAgent = agent({
+    llm: openai({ model: "gpt-4o" }),
+    tools
+  });
+  const result = await myAgent.run("Hello");
+  ```
+</Warning>
+
+## Next Steps
+
+- Learn about [Workflows](/guides/workflows) for custom agent patterns
+- Explore [Query Engines](/guides/query-engines) as agent tools
+- Build [RAG-powered agents](/guides/rag) with document retrieval
+
+## Related Resources
+
+- [Tool Calling](/api/tools/function-tools)
+- [LLM Providers](/models/llms)
+- [Workflow Events](/guides/workflows)

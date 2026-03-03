@@ -1,0 +1,471 @@
+---
+title: "Embeddings"
+description: "Embedding models for semantic search and retrieval"
+icon: "brain"
+---
+
+## Overview
+
+Embeddings convert text into numerical vectors that capture semantic meaning. LlamaIndex.TS uses embeddings for:
+
+- **Semantic search**: Finding similar documents based on meaning, not just keywords
+- **RAG (Retrieval-Augmented Generation)**: Retrieving relevant context for LLM queries
+- **Clustering and classification**: Grouping similar texts together
+- **Similarity comparison**: Measuring how related two pieces of text are
+
+## BaseEmbedding Interface
+
+All embedding models in LlamaIndex.TS extend the `BaseEmbedding` class from `@llamaindex/core/embeddings`:
+
+```typescript
+import { BaseEmbedding } from "@llamaindex/core/embeddings";
+
+abstract class BaseEmbedding {
+  abstract getTextEmbedding(text: string): Promise<number[]>;
+  
+  getTextEmbeddings(texts: string[]): Promise<Array<number[]>>;
+  getTextEmbeddingsBatch(texts: string[], options?): Promise<Array<number[]>>;
+  getQueryEmbedding(query: MessageContentDetail): Promise<number[] | null>;
+  
+  similarity(embedding1: number[], embedding2: number[], mode?): number;
+  
+  embedBatchSize: number;
+  embedInfo?: EmbeddingInfo;
+}
+```
+
+### Embedding Info
+
+Embedding models expose metadata about their capabilities:
+
+```typescript
+type EmbeddingInfo = {
+  dimensions?: number;      // Vector dimensions (e.g., 1536, 3072)
+  maxTokens?: number;       // Maximum input tokens
+  tokenizer?: Tokenizers;   // Tokenizer used
+};
+```
+
+## Generating Embeddings
+
+### Single Text Embedding
+
+Embed a single piece of text:
+
+```typescript
+import { OpenAIEmbedding } from "@llamaindex/openai";
+
+const embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-small",
+});
+
+const embedding = await embedModel.getTextEmbedding(
+  "LlamaIndex is a data framework for LLM applications"
+);
+
+console.log(embedding); // [0.123, -0.456, 0.789, ...]
+console.log(embedding.length); // 1536
+```
+
+### Multiple Text Embeddings
+
+Embed multiple texts efficiently:
+
+```typescript
+const texts = [
+  "What is artificial intelligence?",
+  "Machine learning is a subset of AI",
+  "Deep learning uses neural networks",
+];
+
+const embeddings = await embedModel.getTextEmbeddings(texts);
+console.log(embeddings.length); // 3
+console.log(embeddings[0].length); // 1536
+```
+
+### Query Embeddings
+
+Embed queries for semantic search:
+
+```typescript
+const queryEmbedding = await embedModel.getQueryEmbedding({
+  type: "text",
+  text: "How does RAG work?",
+});
+```
+
+<Note>
+`getQueryEmbedding` accepts `MessageContentDetail` types, making it compatible with multi-modal queries.
+</Note>
+
+## Batch Processing
+
+For large datasets, use batch processing with automatic chunking:
+
+```typescript
+const manyTexts = [...]; // Array of 1000 texts
+
+const embeddings = await embedModel.getTextEmbeddingsBatch(manyTexts, {
+  logProgress: true,
+  progressCallback: (current, total) => {
+    console.log(`Progress: ${current}/${total}`);
+  },
+});
+```
+
+**Batch options:**
+- `logProgress`: Log progress to console
+- `progressCallback`: Custom progress handler
+- `logger`: Custom logger instance
+
+**Automatic batching:**
+Embeddings are automatically batched according to `embedBatchSize` (default: 10) to optimize API calls:
+
+```typescript
+const embedModel = new OpenAIEmbedding({
+  embedBatchSize: 100, // Process 100 texts per API call
+});
+```
+
+## Similarity Calculation
+
+Compare embeddings to measure semantic similarity:
+
+```typescript
+import { SimilarityType } from "@llamaindex/core/embeddings";
+
+const embedding1 = await embedModel.getTextEmbedding("cats are pets");
+const embedding2 = await embedModel.getTextEmbedding("dogs are pets");
+const embedding3 = await embedModel.getTextEmbedding("quantum physics");
+
+// Cosine similarity (default)
+const similarity1 = embedModel.similarity(embedding1, embedding2);
+console.log(similarity1); // ~0.85 (high similarity)
+
+const similarity2 = embedModel.similarity(embedding1, embedding3);
+console.log(similarity2); // ~0.25 (low similarity)
+
+// Other similarity types
+const euclidean = embedModel.similarity(
+  embedding1,
+  embedding2,
+  SimilarityType.EUCLIDEAN
+);
+
+const dotProduct = embedModel.similarity(
+  embedding1,
+  embedding2,
+  SimilarityType.DOT_PRODUCT
+);
+```
+
+**Similarity types:**
+- `SimilarityType.DEFAULT` - Cosine similarity (recommended)
+- `SimilarityType.EUCLIDEAN` - Euclidean distance
+- `SimilarityType.DOT_PRODUCT` - Dot product
+
+## Supported Embedding Models
+
+LlamaIndex.TS supports embeddings from multiple providers:
+
+### OpenAI
+
+```typescript
+import { OpenAIEmbedding } from "@llamaindex/openai";
+
+const embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-small", // 1536 dimensions
+  // model: "text-embedding-3-large", // 3072 dimensions
+  // model: "text-embedding-ada-002", // Legacy, 1536 dimensions
+  
+  dimensions: 512, // Optional: reduce dimensions for 3-small/3-large
+});
+```
+
+**Available models:**
+- `text-embedding-3-small`: 1536 dims, best performance/cost ratio
+- `text-embedding-3-large`: 3072 dims, highest quality
+- `text-embedding-ada-002`: Legacy model, 1536 dims
+
+### Google Gemini
+
+```typescript
+import { GeminiEmbedding, GEMINI_EMBEDDING_MODEL } from "@llamaindex/google";
+
+const embedModel = new GeminiEmbedding({
+  model: GEMINI_EMBEDDING_MODEL.TEXT_EMBEDDING_004,
+});
+```
+
+### Voyage AI
+
+```typescript
+import { VoyageAIEmbedding } from "@llamaindex/voyage-ai";
+
+const embedModel = new VoyageAIEmbedding({
+  model: "voyage-2",
+  apiKey: process.env.VOYAGE_API_KEY,
+});
+```
+
+### HuggingFace
+
+```typescript
+import { HuggingFaceEmbedding } from "@llamaindex/huggingface";
+
+// Using HuggingFace Inference API
+const embedModel = new HuggingFaceEmbedding({
+  modelType: "BAAI/bge-small-en-v1.5",
+  apiKey: process.env.HUGGINGFACE_API_KEY,
+});
+```
+
+### Ollama (Local)
+
+```typescript
+import { OllamaEmbedding } from "@llamaindex/ollama";
+
+const embedModel = new OllamaEmbedding({
+  model: "nomic-embed-text",
+  config: {
+    host: "http://localhost:11434",
+  },
+});
+```
+
+### Cohere
+
+```typescript
+import { CohereEmbedding } from "@llamaindex/cohere";
+
+const embedModel = new CohereEmbedding({
+  model: "embed-english-v3.0",
+  apiKey: process.env.COHERE_API_KEY,
+});
+```
+
+### Jina AI
+
+```typescript
+import { JinaAIEmbedding } from "@llamaindex/jinaai";
+
+const embedModel = new JinaAIEmbedding({
+  model: "jina-embeddings-v2-base-en",
+  apiKey: process.env.JINAAI_API_KEY,
+});
+```
+
+### Mixedbread
+
+```typescript
+import { MixedbreadEmbedding } from "@llamaindex/mixedbread";
+
+const embedModel = new MixedbreadEmbedding({
+  model: "mixedbread-ai/mxbai-embed-large-v1",
+  apiKey: process.env.MIXEDBREAD_API_KEY,
+});
+```
+
+## Using Embeddings with Vector Stores
+
+Embeddings are typically used with vector stores for retrieval:
+
+```typescript
+import { VectorStoreIndex, Document } from "llamaindex";
+import { OpenAIEmbedding } from "@llamaindex/openai";
+import { OpenAI } from "@llamaindex/openai";
+
+const embedModel = new OpenAIEmbedding();
+const llm = new OpenAI();
+
+// Create documents
+const documents = [
+  new Document({ text: "LlamaIndex is a data framework for LLMs" }),
+  new Document({ text: "RAG combines retrieval with generation" }),
+];
+
+// Create index with embedding model
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  embedModel,
+});
+
+// Query using embeddings
+const queryEngine = index.asQueryEngine({ llm });
+const response = await queryEngine.query({ query: "What is RAG?" });
+```
+
+## Embedding Nodes
+
+Embed document nodes for indexing:
+
+```typescript
+import { BaseNode, Document } from "llamaindex";
+import { OpenAIEmbedding } from "@llamaindex/openai";
+
+const embedModel = new OpenAIEmbedding();
+
+// Documents get converted to nodes
+const documents = [
+  new Document({ text: "Content to embed" }),
+];
+
+// Embed nodes
+const nodes = await embedModel.transform(documents);
+console.log(nodes[0].embedding); // Embedding vector attached to node
+```
+
+## Examples
+
+### Semantic Search
+
+```typescript
+import { OpenAIEmbedding } from "@llamaindex/openai";
+
+const embedModel = new OpenAIEmbedding();
+
+// Index documents
+const documents = [
+  "Python is a programming language",
+  "JavaScript is used for web development",
+  "Cats are popular pets",
+  "Dogs are loyal companions",
+];
+
+const docEmbeddings = await embedModel.getTextEmbeddings(documents);
+
+// Search query
+const queryEmbedding = await embedModel.getTextEmbedding(
+  "Tell me about pet animals"
+);
+
+// Find most similar
+const similarities = docEmbeddings.map((docEmb) =>
+  embedModel.similarity(queryEmbedding, docEmb)
+);
+
+const topIndex = similarities.indexOf(Math.max(...similarities));
+console.log("Most relevant:", documents[topIndex]);
+// Output: "Cats are popular pets" or "Dogs are loyal companions"
+```
+
+### Progress Tracking
+
+```typescript
+const largeDataset = [...]; // 10,000 texts
+
+const embeddings = await embedModel.getTextEmbeddingsBatch(largeDataset, {
+  logProgress: true,
+  progressCallback: (current, total) => {
+    const percent = ((current / total) * 100).toFixed(1);
+    console.log(`Embedding progress: ${percent}%`);
+  },
+});
+```
+
+### Custom Dimensions (OpenAI)
+
+```typescript
+// Reduce dimensions for faster search and lower storage
+const embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-large",
+  dimensions: 256, // Instead of default 3072
+});
+
+const embedding = await embedModel.getTextEmbedding("test");
+console.log(embedding.length); // 256
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Choose the right model">
+    - **OpenAI text-embedding-3-small**: Best balance of quality and cost
+    - **OpenAI text-embedding-3-large**: Highest quality, more expensive
+    - **Voyage AI**: Excellent for domain-specific tasks
+    - **Local (Ollama)**: Privacy-focused, no API costs
+  </Accordion>
+
+  <Accordion title="Batch for efficiency">
+    Always use batch methods for multiple texts:
+    ```typescript
+    // Good: Single API call
+    const embeddings = await embedModel.getTextEmbeddings(texts);
+    
+    // Bad: Multiple API calls
+    const embeddings = await Promise.all(
+      texts.map(t => embedModel.getTextEmbedding(t))
+    );
+    ```
+  </Accordion>
+
+  <Accordion title="Cache embeddings">
+    Embeddings are deterministic - cache them to avoid re-computing:
+    ```typescript
+    const cache = new Map();
+    
+    async function getEmbeddingCached(text: string) {
+      if (cache.has(text)) return cache.get(text);
+      const embedding = await embedModel.getTextEmbedding(text);
+      cache.set(text, embedding);
+      return embedding;
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Handle rate limits">
+    Use batch size and retries for large datasets:
+    ```typescript
+    const embedModel = new OpenAIEmbedding({
+      embedBatchSize: 100,
+      maxRetries: 3,
+      timeout: 60000,
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Normalize input text">
+    Clean and normalize text before embedding:
+    ```typescript
+    function normalizeText(text: string) {
+      return text
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+    
+    const embedding = await embedModel.getTextEmbedding(
+      normalizeText(userInput)
+    );
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Multi-Modal Embeddings
+
+Some providers support multi-modal embeddings:
+
+### CLIP (Images + Text)
+
+```typescript
+import { ClipEmbedding } from "@llamaindex/clip";
+
+const embedModel = new ClipEmbedding();
+
+// Embed images and text in same space
+const imageEmbedding = await embedModel.getImageEmbedding(imageBuffer);
+const textEmbedding = await embedModel.getTextEmbedding("a photo of a cat");
+
+// Compare image-text similarity
+const similarity = embedModel.similarity(imageEmbedding, textEmbedding);
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="LLMs" icon="comments" href="/models/llms">
+    Learn about language models and chat interfaces
+  </Card>
+  <Card title="Providers" icon="plug" href="/models/providers">
+    Explore all available embedding providers
+  </Card>
+</CardGroup>

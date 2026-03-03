@@ -1,0 +1,356 @@
+---
+title: "Chat Engines"
+description: "Build conversational interfaces with chat history and context management"
+---
+
+## What are Chat Engines?
+
+Chat engines provide conversational interfaces over your data. Unlike query engines that handle single questions, chat engines:
+
+- Maintain **chat history** for context
+- Support **follow-up questions** 
+- Enable **streaming responses**
+- Handle **multi-turn conversations**
+
+## Chat Engine Types
+
+LlamaIndex.TS provides several chat engine types:
+
+### SimpleChatEngine
+
+Basic chat without retrieval (just LLM conversation):
+
+```typescript
+import { SimpleChatEngine } from "llamaindex";
+
+const chatEngine = new SimpleChatEngine();
+
+const response = await chatEngine.chat({
+  message: "Hello! How are you?"
+});
+
+console.log(response.message.content);
+```
+
+### ContextChatEngine
+
+Chat with document retrieval for every message:
+
+```typescript
+import { ContextChatEngine, VectorStoreIndex, Document } from "llamaindex";
+
+const document = new Document({ text: "Your document text" });
+const index = await VectorStoreIndex.fromDocuments([document]);
+const retriever = index.asRetriever({ similarityTopK: 5 });
+
+const chatEngine = new ContextChatEngine({ retriever });
+
+const response = await chatEngine.chat({
+  message: "What does the document say?"
+});
+```
+
+### CondenseQuestionChatEngine
+
+Condenses chat history into standalone questions before retrieval:
+
+```typescript
+import { CondenseQuestionChatEngine } from "llamaindex";
+
+const queryEngine = index.asQueryEngine();
+
+const chatEngine = new CondenseQuestionChatEngine({
+  queryEngine,
+  chatHistory: []  // Manages history internally
+});
+```
+
+### VectorStoreIndex Chat Engine (Recommended)
+
+The easiest way to create a chat engine from an index:
+
+```typescript
+import { VectorStoreIndex, Document } from "llamaindex";
+
+const document = new Document({ text: "Your document text" });
+const index = await VectorStoreIndex.fromDocuments([document]);
+
+// Creates a ContextChatEngine internally
+const chatEngine = index.asChatEngine({
+  similarityTopK: 5
+});
+
+const response = await chatEngine.chat({
+  message: "Tell me about the document"
+});
+
+console.log(response.message.content);
+```
+
+## Complete Working Example
+
+Here's a full conversational RAG application:
+
+```typescript
+import {
+  ContextChatEngine,
+  Document,
+  Settings,
+  VectorStoreIndex
+} from "llamaindex";
+import { stdin as input, stdout as output } from "node:process";
+import readline from "node:readline/promises";
+
+// Configure chunk size
+Settings.chunkSize = 512;
+
+async function main() {
+  // Load document
+  const essay = await loadEssay(); // Your document loading logic
+  const document = new Document({ text: essay });
+  
+  // Create index and retriever
+  const index = await VectorStoreIndex.fromDocuments([document]);
+  const retriever = index.asRetriever({
+    similarityTopK: 5
+  });
+  
+  // Create chat engine
+  const chatEngine = new ContextChatEngine({ retriever });
+  
+  // Interactive chat loop
+  const rl = readline.createInterface({ input, output });
+  
+  console.log("Chat with your document! Type 'exit' to quit.\n");
+  
+  while (true) {
+    const query = await rl.question("You: ");
+    
+    if (query.toLowerCase() === "exit") break;
+    
+    const stream = await chatEngine.chat({ 
+      message: query, 
+      stream: true 
+    });
+    
+    process.stdout.write("Assistant: ");
+    for await (const chunk of stream) {
+      process.stdout.write(chunk.response);
+    }
+    process.stdout.write("\n\n");
+  }
+}
+
+main().catch(console.error);
+```
+
+## Chat History Management
+
+### Accessing Chat History
+
+Get the conversation history:
+
+```typescript
+const chatEngine = new CondenseQuestionChatEngine({
+  queryEngine,
+  chatHistory: []
+});
+
+// After some chats...
+const history = chatEngine.chatHistory;
+console.log(history);
+```
+
+### Custom Chat History
+
+Provide initial chat context:
+
+```typescript
+import type { ChatMessage } from "llamaindex";
+
+const initialHistory: ChatMessage[] = [
+  {
+    role: "user",
+    content: "What is LlamaIndex?"
+  },
+  {
+    role: "assistant",
+    content: "LlamaIndex is a data framework for LLM applications."
+  }
+];
+
+const chatEngine = new CondenseQuestionChatEngine({
+  queryEngine,
+  chatHistory: initialHistory
+});
+```
+
+### Resetting Chat History
+
+Clear the conversation:
+
+```typescript
+chatEngine.reset();
+```
+
+## Streaming Responses
+
+Stream tokens as they're generated:
+
+```typescript
+const stream = await chatEngine.chat({
+  message: "Tell me about the document",
+  stream: true
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.response);
+}
+```
+
+### Streaming with Different Indices
+
+All index types support streaming:
+
+```typescript
+import { VectorStoreIndex, SummaryIndex, KeywordTableIndex } from "llamaindex";
+
+// Vector store index chat
+const vectorChat = (await VectorStoreIndex.fromDocuments([doc]))
+  .asChatEngine();
+
+// Summary index chat
+const summaryChat = (await SummaryIndex.fromDocuments([doc]))
+  .asChatEngine();
+
+// Keyword index chat  
+const keywordChat = (await KeywordTableIndex.fromDocuments([doc]))
+  .asChatEngine();
+
+// All support streaming
+const stream = await vectorChat.chat({ 
+  message: "Hello", 
+  stream: true 
+});
+```
+
+## CondenseQuestionChatEngine Deep Dive
+
+This engine is ideal for question-focused conversations:
+
+### How It Works
+
+1. **Condenses** the chat history + new message into a standalone question
+2. **Queries** the index with the condensed question
+3. **Returns** the answer and updates chat history
+
+```typescript
+import { CondenseQuestionChatEngine } from "llamaindex";
+
+const queryEngine = index.asQueryEngine();
+
+const chatEngine = new CondenseQuestionChatEngine({
+  queryEngine,
+  chatHistory: []
+});
+
+// First question
+await chatEngine.chat({
+  message: "What is the main topic?"
+});
+// Internally: "What is the main topic?" (no history)
+
+// Follow-up question
+await chatEngine.chat({
+  message: "Tell me more about it"
+});
+// Internally: Condenses to "Tell me more about the main topic" using history
+```
+
+### Custom Condense Prompt
+
+Customize how questions are condensed:
+
+```typescript
+import { 
+  CondenseQuestionChatEngine,
+  type CondenseQuestionPrompt 
+} from "llamaindex";
+
+const customPrompt: CondenseQuestionPrompt = ({
+  question,
+  chatHistory
+}) => {
+  return `Given this chat history:
+${chatHistory}
+
+Rewrite this follow-up question as a standalone question:
+${question}
+
+Standalone question:`;
+};
+
+const chatEngine = new CondenseQuestionChatEngine({
+  queryEngine,
+  chatHistory: [],
+  condenseMessagePrompt: customPrompt
+});
+```
+
+### When to Use CondenseQuestionChatEngine
+
+- Questions build on previous context
+- Queries are primarily questions (not commands)
+- You want explicit question reformulation
+
+### When NOT to Use It
+
+- Messages are conversational statements
+- Heavy use of pronouns ("it", "that", "this")
+- Non-question interactions
+
+## Configuration Options
+
+### Retrieval Parameters
+
+Control how many chunks to retrieve:
+
+```typescript
+const chatEngine = index.asChatEngine({
+  similarityTopK: 10  // Retrieve top 10 chunks
+});
+```
+
+### Custom Settings
+
+Global configuration:
+
+```typescript
+import { Settings } from "llamaindex";
+
+Settings.chunkSize = 1024;
+Settings.chunkOverlap = 100;
+Settings.llm = customLLM;
+Settings.embedModel = customEmbedding;
+```
+
+## Choosing the Right Chat Engine
+
+| Engine | Use Case | Pros | Cons |
+|--------|----------|------|------|
+| **SimpleChatEngine** | Pure conversation | Fast, no retrieval overhead | No document context |
+| **ContextChatEngine** | General chat over docs | Simple, always has context | May retrieve irrelevant info |
+| **CondenseQuestionChatEngine** | Q&A sessions | Better follow-ups | Only good for questions |
+| **Index.asChatEngine()** | Quick start | Easy setup | Less customization |
+
+## Next Steps
+
+- Build [Agents](/guides/agents) with chat capabilities
+- Explore [Query Engines](/guides/query-engines) for single-turn Q&A
+- Learn about [RAG patterns](/guides/rag)
+
+## Related Resources
+
+- [Chat Memory](/advanced/memory)
+- [Streaming](/guides/chat-engines#streaming)
+- [Query Engines](/guides/query-engines)

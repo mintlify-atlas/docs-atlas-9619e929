@@ -1,0 +1,418 @@
+---
+title: "LLMs"
+description: "Language models and chat interfaces in LlamaIndex.TS"
+icon: "comments"
+---
+
+## Overview
+
+LlamaIndex.TS provides a unified interface for working with Large Language Models (LLMs) from various providers. All LLMs implement the `BaseLLM` interface, allowing you to switch between providers with minimal code changes.
+
+## BaseLLM Interface
+
+The `BaseLLM` abstract class from `@llamaindex/core/llms` provides the foundation for all LLM implementations:
+
+```typescript
+import { BaseLLM } from "@llamaindex/core/llms";
+
+abstract class BaseLLM {
+  abstract metadata: LLMMetadata;
+  abstract chat(params): Promise<ChatResponse> | Promise<AsyncIterable<ChatResponseChunk>>;
+  complete(params): Promise<CompletionResponse> | Promise<AsyncIterable<CompletionResponse>>;
+  exec(params): Promise<ExecResponse> | Promise<ExecStreamResponse>;
+}
+```
+
+### LLM Metadata
+
+Every LLM instance exposes metadata about its configuration:
+
+```typescript
+type LLMMetadata = {
+  model: string;              // Model identifier
+  temperature: number;        // Sampling temperature (0-1)
+  topP: number;              // Nucleus sampling parameter
+  maxTokens?: number;        // Maximum tokens in response
+  contextWindow: number;     // Maximum context window size
+  tokenizer?: Tokenizers;    // Tokenizer for the model
+  structuredOutput: boolean; // Supports structured output
+};
+```
+
+## Chat vs Completion
+
+LlamaIndex.TS supports two interaction modes:
+
+### Chat API
+
+The chat API uses message-based conversations with role-aware messages:
+
+```typescript
+import { OpenAI } from "@llamaindex/openai";
+
+const llm = new OpenAI({ model: "gpt-4o" });
+
+const response = await llm.chat({
+  messages: [
+    { role: "system", content: "You are a helpful assistant." },
+    { role: "user", content: "What is LlamaIndex?" },
+  ],
+});
+
+console.log(response.message.content);
+// Raw response from provider available as:
+console.log(response.raw);
+```
+
+**Message roles:**
+- `system` - System instructions that guide the model's behavior
+- `user` - User messages/queries
+- `assistant` - Model responses
+- `developer` - Developer messages (for some providers)
+- `memory` - Memory/context messages
+
+### Completion API
+
+The completion API is simpler, using direct text prompts:
+
+```typescript
+const response = await llm.complete({
+  prompt: "Explain LlamaIndex in one sentence.",
+});
+
+console.log(response.text);
+```
+
+<Note>
+The `complete` method internally converts to chat messages, so both APIs use the same underlying implementation.
+</Note>
+
+## Streaming
+
+All LLMs support streaming responses for real-time output:
+
+### Streaming Chat
+
+```typescript
+const stream = await llm.chat({
+  messages: [{ role: "user", content: "Write a story about LlamaIndex." }],
+  stream: true,
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.delta);
+}
+```
+
+### Streaming Completion
+
+```typescript
+const stream = await llm.complete({
+  prompt: "Count from 1 to 10",
+  stream: true,
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.text);
+}
+```
+
+## Function Calling
+
+Modern LLMs support function calling (also called tool calling) to interact with external tools:
+
+### Using Tools
+
+```typescript
+import { tool } from "@llamaindex/core/tools";
+import z from "zod";
+
+const weatherTool = tool({
+  name: "get_weather",
+  description: "Get the current weather for a location",
+  parameters: z.object({
+    location: z.string().describe("City name"),
+    unit: z.enum(["celsius", "fahrenheit"]).optional(),
+  }),
+  execute: async ({ location, unit = "celsius" }) => {
+    // Call weather API here
+    return { temperature: 72, unit, location };
+  },
+});
+
+const response = await llm.chat({
+  messages: [{ role: "user", content: "What's the weather in San Francisco?" }],
+  tools: [weatherTool],
+});
+
+// Check for tool calls in response
+const toolCalls = response.message.options?.toolCall;
+if (toolCalls) {
+  console.log("Tool calls:", toolCalls);
+}
+```
+
+### Structured Output with exec()
+
+The `exec()` method provides an easier way to handle tool calling and structured output:
+
+```typescript
+import { openai } from "@llamaindex/openai";
+import z from "zod";
+
+const llm = openai({ model: "gpt-4o" });
+
+// Define response schema
+const bookSchema = z.object({
+  title: z.string(),
+  author: z.string(),
+  year: z.number(),
+});
+
+const { object } = await llm.exec({
+  messages: [
+    {
+      role: "user",
+      content: "Tell me about The Divine Comedy by Dante",
+    },
+  ],
+  responseFormat: bookSchema,
+});
+
+console.log(object); // { title: "The Divine Comedy", author: "Dante Alighieri", year: 1320 }
+```
+
+### Streaming with Tools
+
+```typescript
+const { stream, toolCalls, newMessages } = await llm.exec({
+  messages: [{ role: "user", content: "What's the weather in Paris?" }],
+  tools: [weatherTool],
+  stream: true,
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.delta);
+  
+  // Tool calls available in chunk options
+  if (chunk.options?.toolCall) {
+    console.log("Tool called:", chunk.options.toolCall);
+  }
+}
+
+// Get the new messages after stream completes
+const messages = newMessages();
+```
+
+<Warning>
+Not all providers support function calling. Check the provider documentation for compatibility.
+</Warning>
+
+## Configuration Options
+
+All LLMs support common configuration options:
+
+```typescript
+const llm = new OpenAI({
+  // Model selection
+  model: "gpt-4o",
+  
+  // Sampling parameters
+  temperature: 0.7,        // Randomness (0 = deterministic, 1 = creative)
+  topP: 0.9,              // Nucleus sampling
+  maxTokens: 1024,        // Max response length
+  
+  // API configuration
+  apiKey: "sk-...",       // API key (or use env var)
+  baseURL: "https://...", // Custom endpoint
+  maxRetries: 3,          // Retry failed requests
+  timeout: 60000,         // Timeout in ms
+});
+```
+
+### Provider-Specific Options
+
+Some providers offer additional options via `additionalChatOptions`:
+
+```typescript
+const response = await llm.chat({
+  messages: [...],
+  additionalChatOptions: {
+    // Provider-specific options here
+    // e.g., for OpenAI:
+    tool_choice: "auto",
+    response_format: { type: "json_object" },
+  },
+});
+```
+
+## Multi-Modal Support
+
+Many LLMs support images, audio, and other modalities:
+
+### Images
+
+```typescript
+const response = await llm.chat({
+  messages: [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "What's in this image?" },
+        {
+          type: "image_url",
+          image_url: { url: "https://example.com/image.jpg" },
+        },
+      ],
+    },
+  ],
+});
+```
+
+### Files (PDFs, etc.)
+
+```typescript
+import fs from "fs";
+
+const response = await llm.chat({
+  messages: [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "Summarize this document" },
+        {
+          type: "file",
+          data: fs.readFileSync("./document.pdf").toString("base64"),
+          mimeType: "application/pdf",
+        },
+      ],
+    },
+  ],
+});
+```
+
+## Examples
+
+### OpenAI
+
+```typescript
+import { OpenAI } from "@llamaindex/openai";
+
+const llm = new OpenAI({
+  model: "gpt-4o",
+  temperature: 0.7,
+});
+
+const response = await llm.chat({
+  messages: [{ role: "user", content: "Hello!" }],
+});
+```
+
+### Anthropic
+
+```typescript
+import { Anthropic } from "@llamaindex/anthropic";
+
+const llm = new Anthropic({
+  model: "claude-3-7-sonnet",
+  temperature: 0.7,
+  maxTokens: 2048,
+});
+
+const response = await llm.chat({
+  messages: [
+    { role: "system", content: "You are a helpful assistant." },
+    { role: "user", content: "Explain quantum computing." },
+  ],
+});
+```
+
+### Ollama (Local Models)
+
+```typescript
+import { Ollama } from "@llamaindex/ollama";
+
+const llm = new Ollama({
+  model: "llama3.1",
+  config: {
+    host: "http://localhost:11434", // Ollama server
+  },
+  options: {
+    temperature: 0.7,
+    num_ctx: 4096,
+  },
+});
+
+const response = await llm.chat({
+  messages: [{ role: "user", content: "Hello!" }],
+});
+```
+
+### Google Gemini
+
+```typescript
+import { gemini, GEMINI_MODEL } from "@llamaindex/google";
+
+const llm = gemini({
+  model: GEMINI_MODEL.GEMINI_2_0_FLASH,
+  temperature: 0.7,
+});
+
+const response = await llm.chat({
+  messages: [{ role: "user", content: "What is AI?" }],
+});
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Choose the right temperature">
+    - **0.0-0.3**: Deterministic, factual tasks (extraction, classification)
+    - **0.4-0.7**: Balanced (general chat, Q&A)
+    - **0.8-1.0**: Creative tasks (writing, brainstorming)
+  </Accordion>
+
+  <Accordion title="Handle errors gracefully">
+    ```typescript
+    try {
+      const response = await llm.chat({ messages });
+    } catch (error) {
+      if (error.message.includes("rate limit")) {
+        // Wait and retry
+      } else if (error.message.includes("context length")) {
+        // Reduce message history
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Stream for better UX">
+    Always use streaming for user-facing applications to provide immediate feedback:
+    ```typescript
+    const stream = await llm.chat({ messages, stream: true });
+    for await (const chunk of stream) {
+      updateUI(chunk.delta);
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Use environment variables for API keys">
+    ```bash
+    export OPENAI_API_KEY="sk-..."
+    export ANTHROPIC_API_KEY="sk-..."
+    ```
+    
+    LlamaIndex.TS automatically detects these environment variables.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Embeddings" icon="brain" href="/models/embeddings">
+    Learn about embedding models for semantic search
+  </Card>
+  <Card title="Providers" icon="plug" href="/models/providers">
+    Explore all available LLM providers
+  </Card>
+</CardGroup>

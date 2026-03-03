@@ -1,0 +1,215 @@
+---
+title: "Overview"
+description: "Main package aggregating LlamaIndex.TS functionality"
+---
+
+## Overview
+
+The `llamaindex` package is the primary entry point for LlamaIndex.TS. It aggregates and re-exports functionality from `@llamaindex/core` and other packages, providing a unified API for building LLM applications.
+
+## Installation
+
+```bash
+npm install llamaindex
+```
+
+## Package Structure
+
+The package provides multiple runtime-specific entry points:
+
+- **Node.js**: Default import with file system support
+- **Edge Runtime**: Vercel Edge, Cloudflare Workers
+- **React Server Components**: Next.js App Router
+- **Cloudflare Workers**: Workerd-specific optimizations
+
+## Sub-module Exports
+
+The package uses tree-shakeable sub-module exports:
+
+```typescript
+import { VectorStoreIndex } from "llamaindex";
+import { OpenAI } from "@llamaindex/openai";
+import { SimpleChatEngine } from "llamaindex/engines/chat";
+import { RetrieverQueryEngine } from "llamaindex/engines/query";
+import { SentenceSplitter } from "llamaindex/node-parser";
+```
+
+## Core Modules
+
+### Indices
+
+```typescript
+import {
+  VectorStoreIndex,
+  SummaryIndex,
+  KeywordTableIndex
+} from "llamaindex";
+```
+
+### Engines
+
+```typescript
+import { RetrieverQueryEngine } from "llamaindex/engines/query";
+import { ContextChatEngine, SimpleChatEngine } from "llamaindex/engines/chat";
+```
+
+### Storage
+
+```typescript
+import {
+  SimpleVectorStore,
+  StorageContext,
+  SimpleDocumentStore,
+  SimpleIndexStore
+} from "llamaindex/storage";
+```
+
+### Node Parsing
+
+```typescript
+import { SentenceSplitter, MarkdownNodeParser } from "llamaindex/node-parser";
+```
+
+### Ingestion
+
+```typescript
+import { IngestionPipeline } from "llamaindex/ingestion";
+```
+
+## Global Settings
+
+```typescript
+import { Settings } from "llamaindex";
+import { OpenAI } from "@llamaindex/openai";
+import { OpenAIEmbedding } from "@llamaindex/openai";
+
+// Configure default LLM
+Settings.llm = new OpenAI({ model: "gpt-4" });
+
+// Configure default embedding model
+Settings.embedModel = new OpenAIEmbedding({ model: "text-embedding-3-small" });
+
+// Configure chunk size
+Settings.chunkSize = 512;
+Settings.chunkOverlap = 50;
+```
+
+## Quick Start Example
+
+```typescript
+import { VectorStoreIndex, Settings, Document } from "llamaindex";
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+
+// Configure settings
+Settings.llm = new OpenAI({ model: "gpt-4" });
+Settings.embedModel = new OpenAIEmbedding();
+
+// Create documents
+const documents = [
+  new Document({ text: "LlamaIndex is a data framework for LLM applications." }),
+  new Document({ text: "It provides tools for data ingestion, indexing, and retrieval." })
+];
+
+// Build index
+const index = await VectorStoreIndex.fromDocuments(documents);
+
+// Query
+const queryEngine = index.asQueryEngine();
+const response = await queryEngine.query({
+  query: "What is LlamaIndex?"
+});
+
+console.log(response.response);
+```
+
+## Runtime Compatibility
+
+### Node.js
+
+```typescript
+import { VectorStoreIndex } from "llamaindex";
+import fs from "fs";
+
+// Full Node.js API support
+const documents = await SimpleDirectoryReader.loadData("./docs");
+```
+
+### Edge Runtime
+
+```typescript
+import { VectorStoreIndex } from "llamaindex/edge";
+
+// No file system access
+// Use fetch or other edge-compatible APIs
+```
+
+### Cloudflare Workers
+
+```typescript
+import { VectorStoreIndex } from "llamaindex/workerd";
+
+// Optimized for Cloudflare Workers runtime
+```
+
+## Environment Variables
+
+Common environment variables:
+
+```bash
+# OpenAI
+OPENAI_API_KEY=sk-...
+
+# Anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Vector Stores
+PINECONE_API_KEY=...
+PINECONE_INDEX_NAME=...
+```
+
+## TypeScript Support
+
+Full TypeScript support with type inference:
+
+```typescript
+import { VectorStoreIndex, Document } from "llamaindex";
+import type { NodeWithScore } from "@llamaindex/core/schema";
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+const nodes: NodeWithScore[] = await index.asRetriever().retrieve("query");
+```
+
+## Next.js Integration
+
+```typescript
+// app/api/chat/route.ts
+import { VectorStoreIndex, Settings } from "llamaindex";
+import { OpenAI } from "@llamaindex/openai";
+
+Settings.llm = new OpenAI({ model: "gpt-4" });
+
+export async function POST(request: Request) {
+  const { message } = await request.json();
+  
+  const index = await VectorStoreIndex.fromDocuments(documents);
+  const chatEngine = index.asChatEngine();
+  
+  const response = await chatEngine.chat({ message });
+  
+  return Response.json({ response: response.response });
+}
+```
+
+## Deprecated Features
+
+The following features are deprecated:
+
+- **Agents** (`llamaindex/agent`): Use `@llamaindex/workflow` instead
+- **ReACTAgent**: Migrate to workflow-based agents
+
+## See Also
+
+- [Agents](/api/llamaindex/agents)
+- [Engines](/api/llamaindex/engines)
+- [Indices](/api/llamaindex/indices)
+- [Ingestion](/api/llamaindex/ingestion)

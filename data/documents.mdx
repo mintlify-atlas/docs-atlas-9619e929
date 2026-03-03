@@ -1,0 +1,228 @@
+---
+title: Documents
+description: Working with Documents in LlamaIndex.TS
+---
+
+Documents are the fundamental data containers in LlamaIndex.TS. They represent individual pieces of text content along with associated metadata.
+
+## What is a Document?
+
+A `Document` is a specialized `TextNode` that serves as the primary input for building indices and processing data. Each document contains:
+
+- **Text content**: The actual text data
+- **Metadata**: Key-value pairs for additional information
+- **Unique ID**: Automatically generated or custom identifier
+- **Embeddings**: Optional vector representations
+
+## Creating Documents
+
+### From Text
+
+The simplest way to create a document:
+
+```typescript
+import { Document } from "llamaindex";
+
+const document = new Document({
+  text: "This is my document text",
+  id_: "doc_1"
+});
+```
+
+### With Metadata
+
+Add metadata to provide context:
+
+```typescript
+const document = new Document({
+  text: "LlamaIndex is a data framework for LLM applications.",
+  metadata: {
+    source: "documentation",
+    author: "LlamaIndex Team",
+    date: "2024-01-01",
+    category: "introduction"
+  }
+});
+```
+
+### From Files
+
+Use readers to create documents from files:
+
+```typescript
+import { SimpleDirectoryReader } from "@llamaindex/readers/directory";
+
+const reader = new SimpleDirectoryReader();
+const documents = await reader.loadData("./data");
+```
+
+## Document Properties
+
+### Core Properties
+
+- `text`: The document's text content
+- `id_`: Unique identifier (UUID by default)
+- `metadata`: Object containing key-value metadata
+- `embedding`: Optional vector embedding array
+- `hash`: Auto-generated content hash
+
+### Metadata Control
+
+Control which metadata is included in embeddings or LLM context:
+
+```typescript
+const document = new Document({
+  text: "My content",
+  metadata: {
+    title: "Important Doc",
+    internal_id: "12345",
+    description: "A sample document"
+  },
+  excludedLlmMetadataKeys: ["internal_id"],
+  excludedEmbedMetadataKeys: ["internal_id"]
+});
+```
+
+## Working with Documents
+
+### Getting Content
+
+Retrieve content with different metadata modes:
+
+```typescript
+import { MetadataMode } from "llamaindex";
+
+// Get all content including all metadata
+const fullContent = document.getContent(MetadataMode.ALL);
+
+// Get content with LLM-specific metadata
+const llmContent = document.getContent(MetadataMode.LLM);
+
+// Get content with embedding metadata
+const embedContent = document.getContent(MetadataMode.EMBED);
+
+// Get just the text without metadata
+const textOnly = document.getContent(MetadataMode.NONE);
+```
+
+### Metadata Modes
+
+- `MetadataMode.ALL`: Include all metadata
+- `MetadataMode.LLM`: Include metadata for LLM context (respects `excludedLlmMetadataKeys`)
+- `MetadataMode.EMBED`: Include metadata for embeddings (respects `excludedEmbedMetadataKeys`)
+- `MetadataMode.NONE`: No metadata, text only
+
+### Updating Content
+
+Modify document text:
+
+```typescript
+document.setContent("Updated text content");
+```
+
+## Document Transformations
+
+### Converting to Nodes
+
+Documents are typically split into smaller chunks (nodes) for processing:
+
+```typescript
+import { SentenceSplitter } from "llamaindex";
+
+const splitter = new SentenceSplitter({
+  chunkSize: 1024,
+  chunkOverlap: 20
+});
+
+const nodes = await splitter.transform([document]);
+```
+
+### Complete Example
+
+```typescript
+import { 
+  Document, 
+  VectorStoreIndex,
+  SentenceSplitter,
+  MetadataMode 
+} from "llamaindex";
+import { OpenAIEmbedding } from "@llamaindex/openai";
+
+// Create a document
+const document = new Document({
+  text: `
+    LlamaIndex is a data framework for LLM applications.
+    It provides tools for ingesting, structuring, and accessing data.
+    You can build powerful RAG applications with LlamaIndex.
+  `,
+  metadata: {
+    title: "LlamaIndex Introduction",
+    category: "documentation",
+    version: "1.0"
+  }
+});
+
+console.log("Document ID:", document.id_);
+console.log("Full content:", document.getContent(MetadataMode.ALL));
+console.log("Text only:", document.getContent(MetadataMode.NONE));
+
+// Process the document
+const index = await VectorStoreIndex.fromDocuments([document], {
+  nodeParser: new SentenceSplitter({ chunkSize: 512 })
+});
+
+// Query the index
+const queryEngine = index.asQueryEngine();
+const response = await queryEngine.query({
+  query: "What is LlamaIndex?"
+});
+
+console.log(response.toString());
+```
+
+## Document Relationships
+
+Documents can maintain relationships with other nodes through the relationships property:
+
+```typescript
+import { NodeRelationship } from "llamaindex";
+
+// Documents track their derived nodes
+const nodes = splitter.transform([document]);
+
+// Each node maintains a SOURCE relationship to the original document
+for (const node of nodes) {
+  console.log("Source document ID:", node.sourceNode?.nodeId);
+}
+```
+
+## Best Practices
+
+1. **Use meaningful IDs**: Provide custom IDs when you need to track or update specific documents
+2. **Add rich metadata**: Include relevant context that helps with retrieval and filtering
+3. **Exclude sensitive metadata**: Use `excludedLlmMetadataKeys` to keep internal IDs or system fields out of LLM context
+4. **Keep documents focused**: One topic or section per document for better retrieval
+5. **Include source information**: Track where documents came from for debugging and citations
+
+## Related Types
+
+- `TextNode`: Base class for text-based nodes (Document extends this)
+- `ImageDocument`: For documents with image content
+- `BaseNode`: Abstract base class for all node types
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Node Parsers" icon="scissors" href="/data/node-parsers">
+    Learn how to split documents into chunks
+  </Card>
+  <Card title="Readers" icon="file-import" href="/data/readers">
+    Load documents from various file formats
+  </Card>
+  <Card title="Ingestion" icon="database" href="/data/ingestion">
+    Build complete data processing pipelines
+  </Card>
+  <Card title="Storage" icon="hard-drive" href="/data/storage">
+    Persist and manage document stores
+  </Card>
+</CardGroup>

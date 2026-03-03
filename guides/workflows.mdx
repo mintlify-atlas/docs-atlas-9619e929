@@ -1,0 +1,373 @@
+---
+title: "Workflow Orchestration"
+description: "Build event-driven workflows for complex agent patterns and orchestration"
+---
+
+## What are Workflows?
+
+Workflows in LlamaIndex.TS provide an event-driven architecture for building complex agent systems. Instead of linear code execution, workflows:
+
+- React to **events** as they occur
+- Define **handlers** for different states
+- Enable **stateful** multi-step processes
+- Support **parallel** and **conditional** execution
+
+### When to Use Workflows
+
+- Building complex agents with multiple decision points
+- Creating multi-agent systems with coordination
+- Implementing custom RAG patterns
+- Orchestrating long-running processes
+- Debugging and monitoring agent behavior
+
+## Core Concepts
+
+### Events
+
+Events carry data between workflow steps:
+
+```typescript
+import { workflowEvent } from "@llamaindex/workflow";
+
+// Define event types
+const startEvent = workflowEvent<string>();
+const processEvent = workflowEvent<{ data: string; score: number }>();
+const resultEvent = workflowEvent<{ result: string }>();
+```
+
+### Handlers
+
+Handlers process events and emit new ones:
+
+```typescript
+import { createWorkflow } from "@llamaindex/workflow";
+
+const workflow = createWorkflow();
+
+// Register handler for start event
+workflow.handle([startEvent], async (context, event) => {
+  const input = event.data;
+  // Process input...
+  return processEvent.with({ data: input, score: 0.9 });
+});
+```
+
+### State Management
+
+Maintain state across workflow steps:
+
+```typescript
+import { 
+  createWorkflow, 
+  createStatefulMiddleware 
+} from "@llamaindex/workflow";
+
+const { withState } = createStatefulMiddleware(() => ({
+  numIterations: 0,
+  maxIterations: 3
+}));
+
+const workflow = withState(createWorkflow());
+
+workflow.handle([processEvent], async (context, event) => {
+  context.state.numIterations++;
+  
+  if (context.state.numIterations < context.state.maxIterations) {
+    // Continue processing
+    return processEvent.with(event.data);
+  }
+  
+  // Done
+  return resultEvent.with({ result: "Complete" });
+});
+```
+
+## Complete Working Example: Joke Generator
+
+This example shows a workflow that iteratively improves a joke:
+
+```typescript
+import { openai } from "@llamaindex/openai";
+import {
+  createStatefulMiddleware,
+  createWorkflow,
+  workflowEvent
+} from "@llamaindex/workflow";
+
+// Create LLM
+const llm = openai({ model: "gpt-4o-mini" });
+
+// Define events
+const startEvent = workflowEvent<string>();
+const jokeEvent = workflowEvent<{ joke: string }>();
+const critiqueEvent = workflowEvent<{ 
+  joke: string; 
+  critique: string 
+}>();
+const resultEvent = workflowEvent<{ 
+  joke: string; 
+  critique: string 
+}>();
+
+// Create stateful workflow
+const { withState } = createStatefulMiddleware(() => ({
+  numIterations: 0,
+  maxIterations: 3
+}));
+
+const jokeFlow = withState(createWorkflow());
+
+// Handler 1: Generate initial joke
+jokeFlow.handle([startEvent], async (context, event) => {
+  const prompt = `Write your best joke about ${event.data}. Write the joke between <joke> and </joke> tags.`;
+  const response = await llm.complete({ prompt });
+  
+  const joke = response.text
+    .match(/<joke>([\s\S]*?)<\/joke>/)?.[1]?.trim() 
+    ?? response.text;
+    
+  return jokeEvent.with({ joke });
+});
+
+// Handler 2: Critique the joke
+jokeFlow.handle([jokeEvent], async (context, event) => {
+  const prompt = `Give a thorough critique of the following joke. If the joke needs improvement, put "IMPROVE" somewhere in the critique: ${event.data.joke}`;
+  const response = await llm.complete({ prompt });
+  
+  // Check if improvement needed
+  if (response.text.includes("IMPROVE")) {
+    return critiqueEvent.with({
+      joke: event.data.joke,
+      critique: response.text
+    });
+  }
+  
+  // Joke is good enough
+  return resultEvent.with({ 
+    joke: event.data.joke, 
+    critique: response.text 
+  });
+});
+
+// Handler 3: Improve the joke
+jokeFlow.handle([critiqueEvent], async (context, event) => {
+  const state = context.state;
+  state.numIterations++;
+  
+  const prompt = `Write a new joke based on the following critique and the original joke. Write the joke between <joke> and </joke> tags.\n\nJoke: ${event.data.joke}\n\nCritique: ${event.data.critique}`;
+  const response = await llm.complete({ prompt });
+  
+  const joke = response.text
+    .match(/<joke>([\s\S]*?)<\/joke>/)?.[1]?.trim() 
+    ?? response.text;
+  
+  // Check iteration limit
+  if (state.numIterations < state.maxIterations) {
+    return jokeEvent.with({ joke });
+  }
+  
+  return resultEvent.with({ 
+    joke, 
+    critique: event.data.critique 
+  });
+});
+
+// Execute the workflow
+async function main() {
+  const { stream, sendEvent } = jokeFlow.createContext();
+  sendEvent(startEvent.with("pirates"));
+  
+  let result;
+  
+  for await (const event of stream) {
+    if (resultEvent.include(event)) {
+      result = event.data;
+      break;
+    }
+  }
+  
+  console.log("Final joke:", result?.joke);
+  console.log("Critique:", result?.critique);
+}
+
+main().catch(console.error);
+```
+
+## Workflow Patterns
+
+### Linear Pipeline
+
+Sequential processing steps:
+
+```typescript
+const workflow = createWorkflow();
+
+workflow.handle([inputEvent], async (context, event) => {
+  const processed = await step1(event.data);
+  return step2Event.with(processed);
+});
+
+workflow.handle([step2Event], async (context, event) => {
+  const processed = await step2(event.data);
+  return step3Event.with(processed);
+});
+
+workflow.handle([step3Event], async (context, event) => {
+  const result = await step3(event.data);
+  return resultEvent.with(result);
+});
+```
+
+### Conditional Branching
+
+Route events based on conditions:
+
+```typescript
+workflow.handle([inputEvent], async (context, event) => {
+  const data = event.data;
+  
+  if (data.type === "A") {
+    return pathAEvent.with(data);
+  } else if (data.type === "B") {
+    return pathBEvent.with(data);
+  } else {
+    return errorEvent.with({ error: "Unknown type" });
+  }
+});
+```
+
+### Looping with State
+
+Iterate until a condition is met:
+
+```typescript
+const { withState } = createStatefulMiddleware(() => ({
+  attempts: 0,
+  maxAttempts: 5
+}));
+
+const workflow = withState(createWorkflow());
+
+workflow.handle([processEvent], async (context, event) => {
+  context.state.attempts++;
+  
+  const success = await tryOperation(event.data);
+  
+  if (success) {
+    return successEvent.with(event.data);
+  } else if (context.state.attempts < context.state.maxAttempts) {
+    // Retry
+    return processEvent.with(event.data);
+  } else {
+    return failureEvent.with({ 
+      error: "Max attempts reached" 
+    });
+  }
+});
+```
+
+### Parallel Processing
+
+Handle multiple events simultaneously:
+
+```typescript
+workflow.handle([inputEvent], async (context, event) => {
+  // Trigger multiple parallel paths
+  return [
+    taskAEvent.with(event.data),
+    taskBEvent.with(event.data),
+    taskCEvent.with(event.data)
+  ];
+});
+
+// Collect results
+workflow.handle(
+  [taskAResultEvent, taskBResultEvent, taskCResultEvent],
+  async (context, event) => {
+    // Process when all tasks complete
+    return finalEvent.with({
+      results: [event.data]
+    });
+  }
+);
+```
+
+## Event Streaming
+
+Stream workflow events in real-time:
+
+```typescript
+const { stream, sendEvent } = workflow.createContext();
+sendEvent(startEvent.with("input"));
+
+for await (const event of stream) {
+  if (progressEvent.include(event)) {
+    console.log("Progress:", event.data.percentage);
+  } else if (resultEvent.include(event)) {
+    console.log("Result:", event.data);
+    break;
+  }
+}
+```
+
+## Debugging Workflows
+
+### Event Logging
+
+Log all events for debugging:
+
+```typescript
+workflow.handle(["*"], async (context, event) => {
+  console.log("Event:", event.type, event.data);
+  // Don't emit new events in logging handler
+});
+```
+
+### State Inspection
+
+Access workflow state:
+
+```typescript
+workflow.handle([inspectEvent], async (context, event) => {
+  console.log("Current state:", context.state);
+  return continueEvent.with(event.data);
+});
+```
+
+## Building Custom Agent Workflows
+
+Workflows are the foundation for the `agent()` helper. You can build custom agent patterns:
+
+```typescript
+import { 
+  agentInputEvent,
+  agentOutputEvent,
+  agentToolCallEvent,
+  createWorkflow
+} from "@llamaindex/workflow";
+
+const customAgent = createWorkflow();
+
+customAgent.handle([agentInputEvent], async (context, event) => {
+  // Custom agent logic
+  const response = await llm.chat({ messages: event.data.messages });
+  
+  if (response.toolCalls) {
+    return agentToolCallEvent.with({ toolCalls: response.toolCalls });
+  }
+  
+  return agentOutputEvent.with({ message: response.message });
+});
+```
+
+## Next Steps
+
+- Build [Agents](/guides/agents) using workflows
+- Explore [Multi-Agent Systems](/guides/agents#multi-agent-orchestration)
+- Learn about [Event Types](https://github.com/run-llama/LlamaIndexTS/tree/main/packages/workflow)
+
+## Related Resources
+
+- [Agents](/guides/agents)
+- [Chat Engines](/guides/chat-engines)
+- [Query Engines](/guides/query-engines)

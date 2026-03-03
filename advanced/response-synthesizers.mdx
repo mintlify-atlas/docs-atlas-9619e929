@@ -1,0 +1,328 @@
+---
+title: Response Synthesizers
+description: Generate responses from retrieved context
+---
+
+Response synthesizers take retrieved nodes and generate a final response to the user's query. They control how context is presented to the LLM and how the final answer is constructed.
+
+## Overview
+
+All synthesizers extend `BaseSynthesizer` and implement the `synthesize()` method. They differ in how they combine multiple text chunks into a coherent response.
+
+```typescript
+import { getResponseSynthesizer } from "@llamaindex/core/response-synthesizers";
+
+const synthesizer = getResponseSynthesizer("compact");
+
+const response = await synthesizer.synthesize({
+  query: "What is LlamaIndex?",
+  nodes: retrievedNodes,
+});
+```
+
+## Synthesis Modes
+
+LlamaIndex provides four built-in synthesis strategies:
+
+### Compact (Default)
+
+**Best for:** Most use cases, balances quality and efficiency.
+
+Compacts text chunks to fit within the context window, then refines the response:
+
+```typescript
+import { CompactAndRefine } from "@llamaindex/core/response-synthesizers";
+
+const synthesizer = new CompactAndRefine({
+  textQATemplate: customTextQAPrompt,
+  refineTemplate: customRefinePrompt,
+});
+
+const queryEngine = index.asQueryEngine({
+  responseSynthesizer: synthesizer,
+});
+```
+
+**How it works:**
+
+1. Combines chunks to maximize context window usage
+2. Generates initial response from first compact chunk
+3. Refines response with subsequent chunks
+
+### Refine
+
+**Best for:** Comprehensive answers requiring all context.
+
+Builds response iteratively, refining with each chunk:
+
+```typescript
+import { Refine } from "@llamaindex/core/response-synthesizers";
+
+const synthesizer = new Refine({
+  textQATemplate: myTextQAPrompt,
+  refineTemplate: myRefinePrompt,
+});
+```
+
+**How it works:**
+
+1. Generate initial answer from first chunk
+2. For each subsequent chunk:
+   - Present existing answer + new chunk
+   - Ask LLM to refine the answer
+3. Return final refined answer
+
+**Pros:**
+- Most comprehensive, considers all context
+- Good for complex queries
+
+**Cons:**
+- Requires multiple LLM calls (one per chunk)
+- Slower and more expensive
+
+### Tree Summarize
+
+**Best for:** Summarization tasks, parallel processing.
+
+Recursively summarizes chunks in a tree structure:
+
+```typescript
+import { TreeSummarize } from "@llamaindex/core/response-synthesizers";
+
+const synthesizer = new TreeSummarize({
+  summaryTemplate: customSummaryPrompt,
+});
+```
+
+**How it works:**
+
+1. Pack chunks to fit context window
+2. If single chunk: generate answer directly
+3. If multiple chunks:
+   - Summarize each chunk in parallel
+   - Recursively summarize summaries
+   - Return final summary
+
+**Pros:**
+- Parallelizable (faster for many chunks)
+- Good for summarization
+
+**Cons:**
+- May lose details in recursive summarization
+- Not ideal for precise Q&A
+
+### Multi-Modal
+
+**Best for:** Images and multi-modal content.
+
+Handles images and other non-text content:
+
+```typescript
+import { MultiModal } from "@llamaindex/core/response-synthesizers";
+import { MetadataMode } from "@llamaindex/core/schema";
+
+const synthesizer = new MultiModal({
+  textQATemplate: multiModalPrompt,
+  metadataMode: MetadataMode.NONE,
+});
+```
+
+**How it works:**
+
+1. Preserves multi-modal content (text + images)
+2. Formats prompt with all content types
+3. Sends to multi-modal LLM
+
+## Factory Function
+
+Use `getResponseSynthesizer()` for simple cases:
+
+```typescript
+import { getResponseSynthesizer } from "@llamaindex/core/response-synthesizers";
+
+const synthesizer = getResponseSynthesizer("tree_summarize", {
+  summaryTemplate: customPrompt,
+  llm: myLLM,
+});
+```
+
+**Available modes:**
+
+- `"compact"` - CompactAndRefine
+- `"refine"` - Refine
+- `"tree_summarize"` - TreeSummarize  
+- `"multi_modal"` - MultiModal
+
+## Streaming Responses
+
+All synthesizers support streaming:
+
+```typescript
+const stream = await synthesizer.synthesize(
+  {
+    query: "Explain LlamaIndex",
+    nodes: retrievedNodes,
+  },
+  true // Enable streaming
+);
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.response);
+}
+```
+
+## Custom Prompts
+
+Customize the prompts used by synthesizers:
+
+```typescript
+import { PromptTemplate } from "@llamaindex/core/prompts";
+
+const textQAPrompt = new PromptTemplate({
+  template: `Context information:
+{context}
+
+Query: {query}
+
+Provide a detailed answer based only on the context above.`,
+});
+
+const refinePrompt = new PromptTemplate({
+  template: `Original query: {query}
+
+Existing answer: {existingAnswer}
+
+New context: {context}
+
+Refine the existing answer using the new context.`,
+});
+
+const synthesizer = new Refine({
+  textQATemplate: textQAPrompt,
+  refineTemplate: refinePrompt,
+});
+```
+
+## Using with Query Engines
+
+Integrate synthesizers into query engines:
+
+```typescript
+import { CompactAndRefine } from "@llamaindex/core/response-synthesizers";
+
+const queryEngine = index.asQueryEngine({
+  responseSynthesizer: new CompactAndRefine(),
+  retriever: index.asRetriever({ similarityTopK: 5 }),
+});
+
+const response = await queryEngine.query({
+  query: "What are the key features?",
+});
+
+console.log(response.toString());
+```
+
+## Custom Synthesizers
+
+Implement custom synthesis logic:
+
+```typescript
+import { BaseSynthesizer } from "@llamaindex/core/response-synthesizers";
+import { EngineResponse } from "@llamaindex/core/schema";
+import type { MessageContent } from "@llamaindex/core/llms";
+import type { NodeWithScore } from "@llamaindex/core/schema";
+
+class BulletPointSynthesizer extends BaseSynthesizer {
+  protected async getResponse(
+    query: MessageContent,
+    nodes: NodeWithScore[],
+    stream: boolean
+  ): Promise<EngineResponse | AsyncIterable<EngineResponse>> {
+    // Combine context from all nodes
+    const context = nodes
+      .map((n) => n.node.getContent())
+      .join("\n\n");
+
+    const prompt = `Based on this context:
+${context}
+
+Answer this question with bullet points: ${query}
+
+Answer:`;
+
+    if (stream) {
+      const responseStream = await this.llm.complete({
+        prompt,
+        stream: true,
+      });
+      
+      async function* convert() {
+        for await (const chunk of responseStream) {
+          yield EngineResponse.fromResponse(chunk.text, true, nodes);
+        }
+      }
+      return convert();
+    }
+
+    const response = await this.llm.complete({
+      prompt,
+      stream: false,
+    });
+
+    return EngineResponse.fromResponse(response.text, false, nodes);
+  }
+
+  protected _getPrompts() {
+    return {};
+  }
+
+  protected _getPromptModules() {
+    return {};
+  }
+
+  protected _updatePrompts() {}
+}
+
+// Use the custom synthesizer
+const synthesizer = new BulletPointSynthesizer({});
+```
+
+## Choosing a Synthesizer
+
+| Synthesizer | Speed | Quality | Cost | Best For |
+|------------|-------|---------|------|----------|
+| **Compact** | Fast | Good | Low | General Q&A |
+| **Refine** | Slow | Best | High | Complex queries |
+| **Tree Summarize** | Medium | Good | Medium | Summarization |
+| **Multi-Modal** | Fast | Good | Low | Images + text |
+
+## Best Practices
+
+**Prompt Engineering:**
+
+- Customize prompts for your domain
+- Include examples in prompts for better results
+- Test prompts with different synthesizers
+
+**Performance:**
+
+- Use `compact` for most cases (good balance)
+- Use `tree_summarize` when you have many chunks
+- Avoid `refine` unless you need maximum quality
+
+**Context Management:**
+
+- Retrieve more nodes than needed, let synthesizer select best ones
+- Use postprocessors before synthesis to filter nodes
+- Monitor token usage to avoid context window issues
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Postprocessors" icon="filter" href="/advanced/postprocessors">
+    Filter and rerank nodes before synthesis
+  </Card>
+  <Card title="Evaluation" icon="chart-line" href="/advanced/evaluation">
+    Measure and improve response quality
+  </Card>
+</CardGroup>

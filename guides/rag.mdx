@@ -1,0 +1,234 @@
+---
+title: "Building RAG Applications"
+description: "Learn how to build Retrieval-Augmented Generation (RAG) applications with LlamaIndex.TS"
+---
+
+## What is RAG?
+
+Retrieval-Augmented Generation (RAG) combines the power of large language models with external knowledge retrieval. Instead of relying solely on the LLM's training data, RAG applications:
+
+1. **Retrieve** relevant information from your documents
+2. **Augment** the LLM prompt with this context
+3. **Generate** accurate, grounded responses
+
+### When to Use RAG
+
+RAG is ideal when you need to:
+
+- Answer questions about your own documents or data
+- Build chatbots with up-to-date information
+- Create knowledge bases that can be queried naturally
+- Reduce hallucinations by grounding responses in source material
+
+## Building Your First RAG App
+
+<Steps>
+  <Step title="Install Dependencies">
+    ```bash
+    npm install llamaindex
+    ```
+  </Step>
+
+  <Step title="Load Your Documents">
+    Create documents from your text data:
+
+    ```typescript
+    import { Document } from "llamaindex";
+    import fs from "node:fs/promises";
+
+    const text = await fs.readFile("./data/essay.txt", "utf-8");
+    const document = new Document({ text, id_: "essay" });
+    ```
+
+    Or use a directory reader for multiple files:
+
+    ```typescript
+    import { SimpleDirectoryReader } from "@llamaindex/readers/directory";
+
+    const reader = new SimpleDirectoryReader();
+    const documents = await reader.loadData({
+      directoryPath: "./data"
+    });
+    ```
+  </Step>
+
+  <Step title="Create a Vector Index">
+    Index your documents with embeddings:
+
+    ```typescript
+    import { VectorStoreIndex } from "llamaindex";
+
+    const index = await VectorStoreIndex.fromDocuments([document]);
+    ```
+
+    This automatically:
+    - Splits documents into chunks
+    - Generates embeddings for each chunk
+    - Stores them in a vector store for similarity search
+  </Step>
+
+  <Step title="Query Your Data">
+    Create a query engine and ask questions:
+
+    ```typescript
+    const queryEngine = index.asQueryEngine();
+
+    const response = await queryEngine.query({
+      query: "What is the main topic of this essay?"
+    });
+
+    console.log(response.toString());
+    ```
+  </Step>
+</Steps>
+
+## Complete Working Example
+
+Here's a full RAG application you can run:
+
+```typescript
+import { Document, VectorStoreIndex } from "llamaindex";
+import fs from "node:fs/promises";
+import { createInterface } from "node:readline/promises";
+
+async function main() {
+  const rl = createInterface({ 
+    input: process.stdin, 
+    output: process.stdout 
+  });
+
+  // Check for API key
+  if (!process.env.OPENAI_API_KEY) {
+    console.log("OpenAI API key not found in environment variables.");
+    process.env.OPENAI_API_KEY = await rl.question(
+      "Please enter your OpenAI API key: "
+    );
+  }
+
+  // Load your document
+  const essay = await fs.readFile("./data/essay.txt", "utf-8");
+  const document = new Document({ text: essay, id_: "essay" });
+
+  // Create vector index
+  const index = await VectorStoreIndex.fromDocuments([document]);
+  const queryEngine = index.asQueryEngine();
+
+  console.log("\nReady to answer questions about your document!");
+  console.log("Example: What are the main topics discussed?\n");
+
+  // Interactive query loop
+  while (true) {
+    const query = await rl.question("Query: ");
+    const response = await queryEngine.query({ query });
+    console.log(response.toString());
+  }
+}
+
+main().catch(console.error);
+```
+
+## VectorStoreIndex Configuration
+
+### Customizing Chunk Size
+
+Control how documents are split:
+
+```typescript
+import { Settings, SentenceSplitter } from "llamaindex";
+
+// Configure global settings
+Settings.chunkSize = 512;
+Settings.chunkOverlap = 50;
+
+// Or use a custom node parser
+Settings.nodeParser = new SentenceSplitter({
+  chunkSize: 1024,
+  chunkOverlap: 100
+});
+```
+
+### Adjusting Retrieval Parameters
+
+Configure how many results to retrieve:
+
+```typescript
+const queryEngine = index.asQueryEngine({
+  similarityTopK: 5  // Return top 5 most similar chunks
+});
+```
+
+### Using Different Vector Stores
+
+By default, `VectorStoreIndex` uses an in-memory vector store. For production, use a persistent store:
+
+```typescript
+import { PineconeVectorStore } from "@llamaindex/pinecone";
+import { VectorStoreIndex } from "llamaindex";
+import { Pinecone } from "@pinecone-database/pinecone";
+
+const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
+const pineconeIndex = pinecone.Index("your-index-name");
+
+const vectorStore = new PineconeVectorStore({ 
+  pineconeIndex 
+});
+
+const index = await VectorStoreIndex.fromDocuments(
+  documents,
+  { vectorStore }
+);
+```
+
+## Advanced: Low-Level RAG Pipeline
+
+For fine-grained control, build the RAG pipeline manually:
+
+```typescript
+import {
+  Document,
+  SentenceSplitter,
+  TextNode,
+  NodeWithScore,
+  getResponseSynthesizer
+} from "llamaindex";
+
+// 1. Parse documents into nodes
+const nodeParser = new SentenceSplitter({ chunkSize: 512 });
+const nodes = nodeParser.getNodesFromDocuments([
+  new Document({ text: "Your document text here" })
+]);
+
+// 2. Create nodes with scores (from retrieval)
+const nodesWithScore: NodeWithScore[] = [
+  {
+    node: new TextNode({ text: "Relevant chunk 1" }),
+    score: 0.9
+  },
+  {
+    node: new TextNode({ text: "Relevant chunk 2" }),
+    score: 0.7
+  }
+];
+
+// 3. Synthesize response
+const responseSynthesizer = getResponseSynthesizer("compact");
+
+const response = await responseSynthesizer.synthesize({
+  query: "What is the answer?",
+  nodes: nodesWithScore
+});
+
+console.log(response.toString());
+```
+
+## Next Steps
+
+- Learn about [Chat Engines](/guides/chat-engines) for conversational RAG
+- Explore [Query Engines](/guides/query-engines) for advanced querying
+- Build [Agents](/guides/agents) that can use RAG as a tool
+
+## Related Resources
+
+- [Document Loaders](/data/documents)
+- [Vector Stores](/data/storage)
+- [Embeddings](/models/embeddings)

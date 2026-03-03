@@ -1,0 +1,392 @@
+---
+title: Node Parsers
+description: Text chunking and parsing strategies in LlamaIndex.TS
+---
+
+Node parsers transform documents into smaller chunks (nodes) that are optimized for embedding and retrieval. Effective chunking is critical for RAG performance.
+
+## Why Chunking Matters
+
+Chunking breaks large documents into smaller pieces because:
+
+- **Embedding models have token limits** - Most models work best with 512-2048 tokens
+- **Better semantic granularity** - Smaller chunks provide more precise retrieval
+- **Improved context relevance** - Return only the most relevant sections to the LLM
+- **Efficient processing** - Easier to embed and index smaller text segments
+
+## SentenceSplitter
+
+The most commonly used parser that splits text while respecting sentence boundaries.
+
+### Basic Usage
+
+```typescript
+import { SentenceSplitter, Document } from "llamaindex";
+
+const splitter = new SentenceSplitter({
+  chunkSize: 1024,
+  chunkOverlap: 20
+});
+
+const document = new Document({
+  text: "Your long document text here..."
+});
+
+const nodes = await splitter.transform([document]);
+```
+
+### Configuration Options
+
+```typescript
+const splitter = new SentenceSplitter({
+  // Maximum tokens per chunk
+  chunkSize: 1024,
+  
+  // Overlap between chunks (in tokens)
+  chunkOverlap: 200,
+  
+  // Separator between paragraphs
+  paragraphSeparator: "\n\n\n",
+  
+  // Secondary chunking regex for fallback
+  secondaryChunkingRegex: "[^,.;。？！]+[,.;。？！]?",
+  
+  // Separator for splitting into words
+  separator: " ",
+  
+  // Additional abbreviations to recognize (e.g., "LLC.")
+  extraAbbreviations: ["LLC", "Inc"]
+});
+```
+
+### How It Works
+
+1. **Paragraph splitting**: First tries to split by paragraph separators
+2. **Sentence splitting**: Uses sentence tokenizer to find sentence boundaries
+3. **Regex fallback**: If sentences are too long, uses secondary regex
+4. **Word splitting**: Final fallback splits by words
+5. **Chunk merging**: Combines splits into chunks up to `chunkSize` with `chunkOverlap`
+
+### Metadata-Aware Splitting
+
+```typescript
+const document = new Document({
+  text: "Content here",
+  metadata: {
+    title: "Long Document Title Here",
+    author: "Author Name"
+  }
+});
+
+const splitter = new SentenceSplitter({ chunkSize: 1024 });
+const nodes = await splitter.transform([document]);
+
+// Effective chunk size is reduced by metadata length
+// to ensure total content fits within chunkSize
+```
+
+## MarkdownNodeParser
+
+Splits markdown documents by headers, preserving document structure.
+
+```typescript
+import { MarkdownNodeParser, Document } from "llamaindex";
+
+const markdown = `
+# Main Title
+
+Introduction text here.
+
+## Section 1
+
+Content for section 1.
+
+### Subsection 1.1
+
+Detailed content.
+
+## Section 2
+
+Content for section 2.
+`;
+
+const parser = new MarkdownNodeParser();
+const document = new Document({ text: markdown });
+const nodes = await parser.transform([document]);
+
+// Each node contains text from one section
+// Metadata includes header hierarchy:
+// { Header_1: "Main Title", Header_2: "Section 1", Header_3: "Subsection 1.1" }
+```
+
+### Features
+
+- Splits on markdown headers (`#`, `##`, `###`, etc.)
+- Preserves header hierarchy in metadata
+- Handles code blocks correctly
+- Each chunk contains one section's content
+
+## CodeSplitter
+
+Parses code using tree-sitter for syntax-aware chunking.
+
+```typescript
+import { CodeSplitter } from "@llamaindex/node-parser/code";
+import Parser from "tree-sitter";
+import TypeScript from "tree-sitter-typescript";
+
+const parser = new Parser();
+parser.setLanguage(TypeScript.typescript);
+
+const codeSplitter = new CodeSplitter({
+  getParser: () => parser,
+  maxChars: 1500
+});
+
+const codeDocument = new Document({
+  text: `
+    export function example() {
+      // Your code here
+    }
+    
+    export class MyClass {
+      // Class implementation
+    }
+  `
+});
+
+const nodes = await codeSplitter.transform([codeDocument]);
+```
+
+### Features
+
+- **Syntax-aware**: Respects language structure (functions, classes, etc.)
+- **Configurable size**: Set `maxChars` for chunk length
+- **Multi-language**: Works with any tree-sitter grammar
+- **Recursive chunking**: Splits large syntax nodes intelligently
+
+## SentenceWindowNodeParser
+
+Creates overlapping windows around sentences for better context.
+
+```typescript
+import { SentenceWindowNodeParser, Document } from "llamaindex";
+
+const parser = new SentenceWindowNodeParser({
+  windowSize: 3,  // 3 sentences before and after
+  windowMetadataKey: "window",
+  originalTextMetadataKey: "original_sentence"
+});
+
+const nodes = await parser.transform([document]);
+
+// Each node contains one sentence with surrounding context
+// Useful for more precise retrieval with expanded context
+```
+
+## TokenTextSplitter
+
+Splits text by token count without respecting sentence boundaries.
+
+```typescript
+import { TokenTextSplitter } from "llamaindex";
+
+const splitter = new TokenTextSplitter({
+  chunkSize: 512,
+  chunkOverlap: 50,
+  separator: " "
+});
+
+const nodes = await splitter.transform([document]);
+```
+
+## SimpleNodeParser (Deprecated)
+
+<Warning>
+  `SimpleNodeParser` is deprecated. Use `SentenceSplitter` instead.
+</Warning>
+
+```typescript
+// Old way (deprecated)
+import { SimpleNodeParser } from "llamaindex";
+
+// New way
+import { SentenceSplitter } from "llamaindex";
+const parser = new SentenceSplitter();
+```
+
+## Custom Parsers
+
+Create your own parser by extending `NodeParser`:
+
+```typescript
+import { NodeParser, TextNode, Document } from "llamaindex";
+
+class CustomParser extends NodeParser {
+  protected parseNodes(documents: TextNode[]): TextNode[] {
+    // Your custom parsing logic
+    const nodes: TextNode[] = [];
+    
+    for (const doc of documents) {
+      const text = doc.getContent(MetadataMode.NONE);
+      
+      // Split by your custom logic
+      const chunks = this.customSplit(text);
+      
+      // Create nodes from chunks
+      for (const chunk of chunks) {
+        const node = new TextNode({
+          text: chunk,
+          metadata: { ...doc.metadata }
+        });
+        node.relationships[NodeRelationship.SOURCE] = 
+          doc.asRelatedNodeInfo();
+        nodes.push(node);
+      }
+    }
+    
+    return nodes;
+  }
+  
+  private customSplit(text: string): string[] {
+    // Your splitting logic here
+    return text.split("\n\n");
+  }
+}
+
+const parser = new CustomParser();
+const nodes = await parser.transform([document]);
+```
+
+## Choosing a Chunking Strategy
+
+<AccordionGroup>
+  <Accordion title="General text documents (articles, books, documentation)">
+    Use **SentenceSplitter** with:
+    - `chunkSize: 1024` for most cases
+    - `chunkSize: 512` for more precise retrieval
+    - `chunkSize: 2048` for broader context
+    - `chunkOverlap: 200` to maintain continuity
+  </Accordion>
+  
+  <Accordion title="Markdown documentation">
+    Use **MarkdownNodeParser** to:
+    - Preserve document structure
+    - Keep sections together
+    - Add header hierarchy to metadata
+    - Improve navigation and citations
+  </Accordion>
+  
+  <Accordion title="Code files">
+    Use **CodeSplitter** to:
+    - Respect syntax boundaries
+    - Keep functions/classes intact
+    - Enable code search and analysis
+    - Support multiple languages
+  </Accordion>
+  
+  <Accordion title="Precise question answering">
+    Use **SentenceWindowNodeParser** to:
+    - Retrieve exact sentences
+    - Provide surrounding context
+    - Improve answer accuracy
+    - Support citation to specific sentences
+  </Accordion>
+</AccordionGroup>
+
+## Complete Example
+
+```typescript
+import { 
+  Document, 
+  SentenceSplitter,
+  VectorStoreIndex,
+  MetadataMode
+} from "llamaindex";
+import { OpenAIEmbedding } from "@llamaindex/openai";
+import fs from "fs/promises";
+
+async function main() {
+  // Load document
+  const text = await fs.readFile("article.txt", "utf-8");
+  
+  const document = new Document({
+    text,
+    metadata: {
+      source: "article.txt",
+      category: "technical"
+    }
+  });
+  
+  // Configure parser
+  const parser = new SentenceSplitter({
+    chunkSize: 1024,
+    chunkOverlap: 200
+  });
+  
+  // Split into nodes
+  const nodes = await parser.transform([document]);
+  
+  console.log(`Created ${nodes.length} nodes`);
+  console.log("First node:", nodes[0].text);
+  console.log("Node metadata:", nodes[0].metadata);
+  
+  // Build index from nodes
+  const index = await VectorStoreIndex.init({ 
+    nodes,
+    embedModel: new OpenAIEmbedding()
+  });
+  
+  // Query
+  const queryEngine = index.asQueryEngine();
+  const response = await queryEngine.query({
+    query: "What is this document about?"
+  });
+  
+  console.log(response.toString());
+}
+
+main().catch(console.error);
+```
+
+## Best Practices
+
+1. **Match chunk size to your use case**
+   - Smaller (512) for precise retrieval
+   - Larger (2048) for broad context
+
+2. **Use appropriate overlap**
+   - 10-20% of chunk size typically works well
+   - Prevents losing context at boundaries
+
+3. **Respect document structure**
+   - Use MarkdownNodeParser for markdown
+   - Use CodeSplitter for code
+   - Don't split across major boundaries
+
+4. **Consider metadata**
+   - Account for metadata in chunk size
+   - Use metadata to preserve structure
+   - Add custom fields for filtering
+
+5. **Test your strategy**
+   - Evaluate retrieval quality
+   - Adjust chunk size based on results
+   - Monitor token usage
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Documents" icon="file-lines" href="/data/documents">
+    Learn about Document structure
+  </Card>
+  <Card title="Ingestion" icon="database" href="/data/ingestion">
+    Build complete processing pipelines
+  </Card>
+  <Card title="Embeddings" icon="vector-square" href="/embeddings/overview">
+    Configure embedding models
+  </Card>
+  <Card title="Retrieval" icon="magnifying-glass" href="/retrieval/overview">
+    Optimize retrieval strategies
+  </Card>
+</CardGroup>

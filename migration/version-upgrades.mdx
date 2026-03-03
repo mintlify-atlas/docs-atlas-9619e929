@@ -1,0 +1,312 @@
+---
+title: "Version Upgrades"
+description: "Guide for upgrading between major versions of LlamaIndex.TS"
+---
+
+This guide covers breaking changes and migration steps when upgrading between major versions of LlamaIndex.TS.
+
+## Current Version: 0.12.x
+
+The latest stable version is **0.12.1**. Review the sections below for upgrade paths from older versions.
+
+## Upgrading to 0.12.x
+
+### Breaking Changes
+
+**Cloud Package Removal**
+
+The cloud package is no longer exported from the main `llamaindex` package.
+
+**Before (0.11.x):**
+```typescript
+import { LlamaCloudIndex } from "llamaindex";
+```
+
+**After (0.12.x):**
+```typescript
+import { LlamaCloudIndex } from "@llamaindex/cloud";
+```
+
+**Migration Steps:**
+
+1. Install the cloud package separately:
+```bash
+npm install @llamaindex/cloud
+```
+
+2. Update your imports:
+```typescript
+// Old
+import { LlamaCloudIndex, LlamaCloudFileService } from "llamaindex";
+
+// New
+import { LlamaCloudIndex, LlamaCloudFileService } from "@llamaindex/cloud";
+```
+
+## Upgrading to 0.11.x
+
+### Breaking Changes
+
+**Default LLM and Embed Model Removed**
+
+Settings no longer provide default LLM and embedding models.
+
+**Before (0.10.x):**
+```typescript
+// LLM and embedModel were set to OpenAI by default
+import { VectorStoreIndex } from "llamaindex";
+const index = await VectorStoreIndex.fromDocuments(documents);
+```
+
+**After (0.11.x):**
+```typescript
+import { Settings, VectorStoreIndex } from "llamaindex";
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+
+// Must explicitly set LLM and embedding model
+Settings.llm = new OpenAI();
+Settings.embedModel = new OpenAIEmbedding();
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+```
+
+**Old Workflows Removed**
+
+The old workflow system has been removed. Use the new `@llamaindex/workflow` package.
+
+**Migration Steps:**
+
+1. Install required packages:
+```bash
+npm install @llamaindex/openai @llamaindex/workflow
+```
+
+2. Set LLM and embed model explicitly:
+```typescript
+import { Settings } from "llamaindex";
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+
+Settings.llm = new OpenAI({ model: "gpt-4" });
+Settings.embedModel = new OpenAIEmbedding({ model: "text-embedding-3-small" });
+```
+
+3. Migrate workflows to new package:
+```typescript
+// Old (deprecated)
+import { Workflow } from "llamaindex";
+
+// New
+import { Workflow } from "@llamaindex/workflow";
+```
+
+## Upgrading to 0.10.x
+
+### Breaking Changes
+
+**Build System Change to Bunchee**
+
+Internal build system migrated to bunchee for better tree-shaking and bundle size optimization.
+
+**Migration Steps:**
+
+No code changes required. Reinstall dependencies:
+
+```bash
+rm -rf node_modules package-lock.json
+npm install
+```
+
+## Upgrading to 0.9.x
+
+### Breaking Changes
+
+**Re-exports Removed**
+
+The main package no longer re-exports provider packages.
+
+**Before (0.8.x):**
+```typescript
+import { OpenAI, Anthropic, Pinecone } from "llamaindex";
+```
+
+**After (0.9.x):**
+```typescript
+import { OpenAI } from "@llamaindex/openai";
+import { Anthropic } from "@llamaindex/anthropic";
+import { PineconeVectorStore } from "@llamaindex/pinecone";
+```
+
+**ServiceContext Removed**
+
+The deprecated `ServiceContext` has been completely removed.
+
+**Before (0.8.x):**
+```typescript
+const serviceContext = serviceContextFromDefaults({
+  llm: new OpenAI(),
+  embedModel: new OpenAIEmbedding(),
+});
+```
+
+**After (0.9.x):**
+```typescript
+import { Settings } from "llamaindex";
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+
+Settings.llm = new OpenAI();
+Settings.embedModel = new OpenAIEmbedding();
+```
+
+**Readers Package Removed**
+
+Readers are no longer bundled with the main package.
+
+**Migration Steps:**
+
+1. Install provider packages:
+```bash
+npm install @llamaindex/openai @llamaindex/anthropic @llamaindex/pinecone
+```
+
+2. Update all imports:
+```typescript
+// LLMs and Embeddings
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+import { Anthropic } from "@llamaindex/anthropic";
+import { Gemini } from "@llamaindex/google";
+
+// Vector Stores
+import { PineconeVectorStore } from "@llamaindex/pinecone";
+import { ChromaVectorStore } from "@llamaindex/chroma";
+import { QdrantVectorStore } from "@llamaindex/qdrant";
+```
+
+3. Migrate from ServiceContext to Settings:
+```typescript
+import { Settings } from "llamaindex";
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+
+Settings.llm = new OpenAI({
+  model: "gpt-4",
+  temperature: 0.1,
+});
+Settings.embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-small",
+});
+```
+
+4. Install readers separately:
+```bash
+npm install @llamaindex/readers
+```
+
+```typescript
+import { PDFReader, DocxReader } from "@llamaindex/readers";
+```
+
+## Upgrading to 0.8.x
+
+### Breaking Changes
+
+**Vector Stores Moved to Separate Packages**
+
+**Before (0.7.x):**
+```typescript
+import { PineconeVectorStore } from "llamaindex";
+```
+
+**After (0.8.x):**
+```typescript
+import { PineconeVectorStore } from "@llamaindex/pinecone";
+```
+
+**LLMs and Embeddings Migrated**
+
+All LLM and embedding providers moved to dedicated packages.
+
+**Migration Steps:**
+
+1. Install vector store packages:
+```bash
+npm install @llamaindex/pinecone
+npm install @llamaindex/chroma
+npm install @llamaindex/qdrant
+```
+
+2. Update imports:
+```typescript
+import { PineconeVectorStore } from "@llamaindex/pinecone";
+import { ChromaVectorStore } from "@llamaindex/chroma";
+import { QdrantVectorStore } from "@llamaindex/qdrant";
+```
+
+## General Upgrade Tips
+
+### Always Check Dependencies
+
+After upgrading, check for peer dependency warnings:
+
+```bash
+npm list
+```
+
+### Use Changesets for Details
+
+Review the [CHANGELOG.md](https://github.com/run-llama/LlamaIndexTS/blob/main/packages/llamaindex/CHANGELOG.md) for detailed changes between versions.
+
+### Test Thoroughly
+
+After upgrading:
+
+1. Run your test suite
+2. Test critical workflows
+3. Check for TypeScript errors
+4. Verify runtime behavior
+
+### Incremental Upgrades
+
+For major version jumps, upgrade incrementally:
+
+```bash
+# Instead of 0.8.x -> 0.12.x
+# Do: 0.8.x -> 0.9.x -> 0.10.x -> 0.11.x -> 0.12.x
+npm install llamaindex@0.9.0
+# Test and fix issues
+npm install llamaindex@0.10.0
+# Test and fix issues
+# Continue...
+```
+
+## Node.js Version Requirements
+
+LlamaIndex.TS requires **Node.js >= 18.0.0**.
+
+If you're on an older version:
+
+```bash
+# Check your Node.js version
+node -v
+
+# Upgrade to Node.js LTS
+nvm install --lts
+nvm use --lts
+```
+
+## Getting Help
+
+If you encounter issues during migration:
+
+- Check [GitHub Issues](https://github.com/run-llama/LlamaIndexTS/issues)
+- Ask in [Discord](https://discord.com/invite/eN6D2HQ4aX)
+- Review [GitHub Discussions](https://github.com/run-llama/LlamaIndexTS/discussions)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deprecated Features" icon="triangle-exclamation" href="/migration/deprecated-features">
+    Learn about deprecated APIs and their replacements
+  </Card>
+  <Card title="Troubleshooting" icon="wrench" href="/resources/troubleshooting">
+    Common issues and solutions
+  </Card>
+</CardGroup>

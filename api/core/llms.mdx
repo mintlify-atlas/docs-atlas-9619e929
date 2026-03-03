@@ -1,0 +1,232 @@
+---
+title: "LLMs"
+description: "Core LLM interfaces and base classes for language model integration"
+---
+
+## Overview
+
+The LLM module provides the foundational interfaces and base classes for integrating language models in LlamaIndex.TS. All LLM providers (OpenAI, Anthropic, etc.) extend these base classes.
+
+## BaseLLM
+
+Abstract base class that all LLM implementations extend.
+
+```typescript
+import { BaseLLM } from "@llamaindex/core/llms";
+```
+
+### Methods
+
+<ParamField path="chat" type="method">
+  Get a chat response from the LLM
+  
+  **Streaming:**
+  ```typescript
+  chat(params: LLMChatParamsStreaming): Promise<AsyncIterable<ChatResponseChunk>>
+  ```
+  
+  **Non-streaming:**
+  ```typescript
+  chat(params: LLMChatParamsNonStreaming): Promise<ChatResponse>
+  ```
+  
+  <Expandable title="Parameters">
+    <ParamField path="messages" type="ChatMessage[]" required>
+      Array of chat messages with role and content
+    </ParamField>
+    <ParamField path="stream" type="boolean">
+      Whether to stream the response. Defaults to false
+    </ParamField>
+    <ParamField path="tools" type="BaseTool[]">
+      Optional array of tools for function calling
+    </ParamField>
+    <ParamField path="responseFormat" type="ZodSchema | object">
+      Schema for structured output
+    </ParamField>
+    <ParamField path="additionalChatOptions" type="object">
+      Provider-specific options
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="complete" type="method">
+  Get a prompt completion from the LLM
+  
+  **Streaming:**
+  ```typescript
+  complete(params: LLMCompletionParamsStreaming): Promise<AsyncIterable<CompletionResponse>>
+  ```
+  
+  **Non-streaming:**
+  ```typescript
+  complete(params: LLMCompletionParamsNonStreaming): Promise<CompletionResponse>
+  ```
+  
+  <Expandable title="Parameters">
+    <ParamField path="prompt" type="string | MessageContentDetail[]" required>
+      The prompt text or multi-modal content
+    </ParamField>
+    <ParamField path="stream" type="boolean">
+      Whether to stream the response
+    </ParamField>
+    <ParamField path="responseFormat" type="ZodSchema | object">
+      Schema for structured output
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="exec" type="method">
+  Execute LLM with tool calling and structured output support
+  
+  ```typescript
+  exec<Z extends ZodSchema>(
+    params: LLMChatParamsNonStreaming<AdditionalChatOptions, AdditionalMessageOptions, Z>
+  ): Promise<ExecResponse<AdditionalMessageOptions, ZodInfer<Z>>>
+  ```
+  
+  <Expandable title="Response Fields">
+    <ResponseField name="newMessages" type="ChatMessage[]">
+      New messages including assistant responses and tool results
+    </ResponseField>
+    <ResponseField name="toolCalls" type="ToolCall[]">
+      Array of tool calls made by the LLM
+    </ResponseField>
+    <ResponseField name="object" type="ZodInfer<Z> | undefined">
+      Parsed structured output if responseFormat was provided
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+## Types
+
+### ChatMessage
+
+```typescript
+type ChatMessage<AdditionalMessageOptions extends object = object> = {
+  content: MessageContent;
+  role: MessageType;
+  options?: AdditionalMessageOptions;
+};
+```
+
+<Expandable title="Fields">
+  <ParamField path="content" type="string | MessageContentDetail[]">
+    Message content (text or multi-modal)
+  </ParamField>
+  <ParamField path="role" type="MessageType">
+    Role: `"user"`, `"assistant"`, `"system"`, `"memory"`, or `"developer"`
+  </ParamField>
+  <ParamField path="options" type="object">
+    Provider-specific message options (e.g., tool calls, tool results)
+  </ParamField>
+</Expandable>
+
+### ChatResponse
+
+```typescript
+interface ChatResponse<AdditionalMessageOptions extends object = object> {
+  message: ChatMessage<AdditionalMessageOptions>;
+  raw: object | null;
+}
+```
+
+<Expandable title="Fields">
+  <ResponseField name="message" type="ChatMessage">
+    The assistant's response message
+  </ResponseField>
+  <ResponseField name="raw" type="object | null">
+    Raw response from the LLM provider
+  </ResponseField>
+</Expandable>
+
+### LLMMetadata
+
+```typescript
+type LLMMetadata = {
+  model: string;
+  temperature: number;
+  topP: number;
+  maxTokens?: number;
+  contextWindow: number;
+  tokenizer: Tokenizers | undefined;
+  structuredOutput: boolean;
+};
+```
+
+## Multi-modal Support
+
+LLMs support multi-modal content through `MessageContentDetail`:
+
+```typescript
+type MessageContentDetail =
+  | MessageContentTextDetail
+  | MessageContentImageDetail
+  | MessageContentAudioDetail
+  | MessageContentVideoDetail
+  | MessageContentFileDetail;
+```
+
+### Example: Image Input
+
+```typescript
+const response = await llm.chat({
+  messages: [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "What's in this image?" },
+        {
+          type: "image_url",
+          image_url: { url: "data:image/jpeg;base64,..." }
+        }
+      ]
+    }
+  ]
+});
+```
+
+## Tool Calling
+
+LLMs support function calling through the `tools` parameter:
+
+```typescript
+import { tool } from "@llamaindex/core/tools";
+import { z } from "zod";
+
+const weatherTool = tool({
+  name: "get_weather",
+  description: "Get the weather for a location",
+  parameters: z.object({
+    location: z.string().describe("City name")
+  }),
+  execute: async ({ location }) => {
+    return `Weather in ${location}: 72°F and sunny`;
+  }
+});
+
+const response = await llm.chat({
+  messages: [{ role: "user", content: "What's the weather in SF?" }],
+  tools: [weatherTool]
+});
+```
+
+## Structured Output
+
+Use Zod schemas for type-safe structured output:
+
+```typescript
+import { z } from "zod";
+
+const schema = z.object({
+  name: z.string(),
+  age: z.number(),
+  email: z.string().email()
+});
+
+const result = await llm.exec({
+  messages: [{ role: "user", content: "Extract info: John is 30, john@example.com" }],
+  responseFormat: schema
+});
+
+console.log(result.object); // { name: "John", age: 30, email: "john@example.com" }
+```

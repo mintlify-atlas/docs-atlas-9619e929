@@ -1,0 +1,345 @@
+---
+title: Retrieval Modes
+description: Different retrieval strategies including hybrid search, semantic search, and custom retrievers
+---
+
+LlamaIndex.TS supports multiple retrieval modes and strategies to find the most relevant documents for your queries.
+
+## Retrieval Strategy Overview
+
+Retrieval modes determine how documents are searched and ranked:
+
+- **DEFAULT** - Standard semantic similarity search using embeddings
+- **HYBRID** - Combines semantic and keyword search
+- **SPARSE** - Keyword-based search (e.g., BM25)
+- **MMR** - Maximum Marginal Relevance for diverse results
+- **SEMANTIC_HYBRID** - Provider-specific semantic hybrid (e.g., Azure AI Search)
+
+## Vector Store Query Modes
+
+### Default Similarity Search
+
+Standard semantic search using vector embeddings:
+
+```typescript
+import { VectorStoreIndex } from "llamaindex";
+import { VectorStoreQueryMode } from "@llamaindex/core/vector-store";
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+
+const retriever = index.asRetriever({
+  similarityTopK: 5,
+  mode: VectorStoreQueryMode.DEFAULT, // Default mode
+});
+
+const results = await retriever.retrieve({ 
+  query: "What is machine learning?" 
+});
+```
+
+### Hybrid Search
+
+Combines semantic similarity with keyword matching (requires vector store support):
+
+```typescript
+import { VectorStoreQueryMode } from "@llamaindex/core/vector-store";
+
+const retriever = index.asRetriever({
+  similarityTopK: 10,
+  mode: VectorStoreQueryMode.HYBRID,
+});
+
+// Some vector stores allow configuring the hybrid balance
+const hybridRetriever = index.asRetriever({
+  similarityTopK: 10,
+  mode: VectorStoreQueryMode.HYBRID,
+  customParams: {
+    alpha: 0.5, // 0.0 = pure keyword, 1.0 = pure semantic
+  },
+});
+```
+
+**Note**: Not all vector stores support hybrid search. Check your vector store documentation.
+
+### Maximum Marginal Relevance (MMR)
+
+MMR balances relevance with diversity to avoid redundant results:
+
+```typescript
+const retriever = index.asRetriever({
+  similarityTopK: 10,
+  mode: VectorStoreQueryMode.MMR,
+});
+
+// Configure MMR threshold
+const mmrRetriever = index.asRetriever({
+  similarityTopK: 10,
+  mode: VectorStoreQueryMode.MMR,
+  customParams: {
+    mmrThreshold: 0.5, // Diversity vs relevance tradeoff
+  },
+});
+```
+
+**Use Case**: When you want diverse results that cover different aspects of the query.
+
+## Semantic vs Keyword Search
+
+### Semantic Search
+
+Uses embeddings to find conceptually similar content:
+
+```typescript
+// Semantic search understands meaning
+const semanticRetriever = index.asRetriever({
+  mode: VectorStoreQueryMode.DEFAULT,
+});
+
+// Will find documents about "ML" even if query says "machine learning"
+const results = await semanticRetriever.retrieve({ 
+  query: "machine learning algorithms" 
+});
+```
+
+**Strengths**:
+- Understands synonyms and related concepts
+- Works across languages
+- Captures semantic meaning
+
+**Weaknesses**:
+- May miss exact keyword matches
+- Requires quality embeddings
+- More computationally expensive
+
+### Keyword Search (BM25)
+
+Traditional keyword-based retrieval using BM25 algorithm:
+
+```typescript
+import { Bm25Retriever } from "@llamaindex/bm25-retriever";
+import { VectorStoreIndex } from "llamaindex";
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+
+const retriever = new Bm25Retriever({
+  docStore: index.docStore,
+  topK: 5,
+});
+
+const results = await retriever.retrieve({ 
+  query: "specific technical term" 
+});
+```
+
+**Strengths**:
+- Excellent for exact matches
+- Fast and efficient
+- No embedding required
+- Good for technical terms and proper nouns
+
+**Weaknesses**:
+- Doesn't understand synonyms
+- Language-dependent
+- Misses semantic relationships
+
+### Hybrid Approach
+
+Combine both for best results:
+
+```typescript
+import { Bm25Retriever } from "@llamaindex/bm25-retriever";
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+
+// Use vector store hybrid if supported
+const hybridRetriever = index.asRetriever({
+  mode: VectorStoreQueryMode.HYBRID,
+  similarityTopK: 10,
+});
+
+// Or manually combine BM25 + semantic
+const bm25Retriever = new Bm25Retriever({
+  docStore: index.docStore,
+  topK: 10,
+});
+
+const vectorRetriever = index.asRetriever({ similarityTopK: 10 });
+
+// Retrieve from both and combine
+const [bm25Results, vectorResults] = await Promise.all([
+  bm25Retriever.retrieve({ query }),
+  vectorRetriever.retrieve({ query }),
+]);
+
+// Merge and deduplicate results
+const combined = [...bm25Results, ...vectorResults];
+```
+
+## Custom Retrievers
+
+Create custom retrieval logic by extending `BaseRetriever`:
+
+```typescript
+import { BaseRetriever } from "@llamaindex/core/retriever";
+import type { QueryBundle, NodeWithScore } from "@llamaindex/core";
+
+class CustomRetriever extends BaseRetriever {
+  private index: VectorStoreIndex;
+  private threshold: number;
+
+  constructor(index: VectorStoreIndex, threshold: number = 0.7) {
+    super();
+    this.index = index;
+    this.threshold = threshold;
+  }
+
+  async _retrieve(params: QueryBundle): Promise<NodeWithScore[]> {
+    // Get all nodes from index
+    const allNodes = await this.index.asRetriever({ 
+      similarityTopK: 20 
+    }).retrieve(params);
+
+    // Apply custom filtering logic
+    const filtered = allNodes.filter(node => 
+      node.score && node.score >= this.threshold
+    );
+
+    // Custom ranking or processing
+    return filtered.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+  }
+}
+
+// Use custom retriever
+const customRetriever = new CustomRetriever(index, 0.8);
+const results = await customRetriever.retrieve({ query: "test" });
+```
+
+## Multi-Stage Retrieval
+
+Retrieve many candidates, then rerank:
+
+```typescript
+import { CohereRerank } from "@llamaindex/cohere";
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+
+// First stage: retrieve many candidates
+const retriever = index.asRetriever({ 
+  similarityTopK: 50 // Get more candidates
+});
+
+// Second stage: rerank with specialized model
+const reranker = new CohereRerank({ 
+  topN: 5 // Return top 5 after reranking
+});
+
+const queryEngine = index.asQueryEngine({
+  retriever,
+  nodePostprocessors: [reranker],
+});
+
+const response = await queryEngine.query({ 
+  query: "complex question" 
+});
+```
+
+## Retrieval with Filters
+
+Combine retrieval modes with metadata filtering:
+
+```typescript
+import { MetadataFilters } from "llamaindex";
+
+const filters: MetadataFilters = {
+  filters: [
+    { key: "category", value: "technical", operator: "==" },
+    { key: "date", value: "2024-01-01", operator: ">" },
+  ],
+};
+
+const retriever = index.asRetriever({
+  mode: VectorStoreQueryMode.HYBRID,
+  similarityTopK: 10,
+  filters,
+});
+```
+
+## Comparing Retrieval Modes
+
+```typescript
+import { VectorStoreQueryMode } from "@llamaindex/core/vector-store";
+
+async function compareRetrievalModes() {
+  const query = "What is artificial intelligence?";
+  
+  // Default semantic search
+  const defaultResults = await index.asRetriever({
+    mode: VectorStoreQueryMode.DEFAULT,
+    similarityTopK: 5,
+  }).retrieve({ query });
+  
+  // Hybrid search
+  const hybridResults = await index.asRetriever({
+    mode: VectorStoreQueryMode.HYBRID,
+    similarityTopK: 5,
+  }).retrieve({ query });
+  
+  // MMR for diversity
+  const mmrResults = await index.asRetriever({
+    mode: VectorStoreQueryMode.MMR,
+    similarityTopK: 5,
+  }).retrieve({ query });
+  
+  console.log("Default:", defaultResults.length);
+  console.log("Hybrid:", hybridResults.length);
+  console.log("MMR:", mmrResults.length);
+}
+```
+
+## BM25 Retriever Example
+
+Standalone BM25 retriever for keyword search:
+
+```typescript
+import { Bm25Retriever } from "@llamaindex/bm25-retriever";
+import { PDFReader } from "@llamaindex/readers/pdf";
+import { VectorStoreIndex, MetadataMode } from "llamaindex";
+
+// Load documents
+const reader = new PDFReader();
+const documents = await reader.loadData("./document.pdf");
+
+// Create index
+const index = await VectorStoreIndex.fromDocuments(documents);
+
+// Create BM25 retriever
+const retriever = new Bm25Retriever({
+  docStore: index.docStore,
+  topK: 3,
+});
+
+// Retrieve with keyword search
+const results = await retriever.retrieve({
+  query: "specific technical term",
+});
+
+results.forEach((r) => {
+  console.log(`Score: ${r.score}`);
+  console.log(`Text: ${r.node.getContent(MetadataMode.NONE)}`);
+});
+```
+
+## Best Practices
+
+1. **Start with Default**: Begin with semantic search, then experiment
+2. **Use Hybrid for Production**: Combines strengths of both approaches
+3. **Tune Top-K**: Retrieve more candidates (20-50) then rerank
+4. **Apply Filters**: Use metadata filters to narrow search space
+5. **Monitor Performance**: Track retrieval quality and latency
+6. **Consider Domain**: Technical docs may benefit from keyword search
+
+## Related Resources
+
+- [Vector Store Retrievers](/retrievers/vector-store) - Vector-based retrieval details
+- [VectorStoreIndex](/indices/vector-index) - Building vector indices
+- [Node Postprocessors](/advanced/postprocessors) - Reranking and filtering

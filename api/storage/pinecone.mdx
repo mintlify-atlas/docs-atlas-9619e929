@@ -1,0 +1,355 @@
+---
+title: "Pinecone"
+description: "Pinecone vector database integration"
+icon: "database"
+---
+
+## Overview
+
+Pinecone is a managed vector database optimized for similarity search at scale. The LlamaIndex integration provides seamless storage and retrieval of embeddings.
+
+## Installation
+
+```bash
+npm install @llamaindex/pinecone @pinecone-database/pinecone
+```
+
+## Basic Usage
+
+```typescript
+import { PineconeVectorStore } from "@llamaindex/pinecone";
+import { VectorStoreIndex, Document } from "llamaindex";
+
+const vectorStore = new PineconeVectorStore({
+  indexName: "my-index",
+  namespace: "default"
+});
+
+const documents = [
+  new Document({ text: "LlamaIndex is a data framework." }),
+  new Document({ text: "Pinecone is a vector database." })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+const queryEngine = index.asQueryEngine();
+const response = await queryEngine.query({
+  query: "What is Pinecone?"
+});
+```
+
+## Constructor Options
+
+<ParamField path="indexName" type="string">
+  Pinecone index name (defaults to `PINECONE_INDEX_NAME` env var)
+</ParamField>
+
+<ParamField path="namespace" type="string" default="">
+  Namespace for organizing vectors (defaults to `PINECONE_NAMESPACE` env var)
+</ParamField>
+
+<ParamField path="apiKey" type="string">
+  Pinecone API key (defaults to `PINECONE_API_KEY` env var)
+</ParamField>
+
+<ParamField path="chunkSize" type="number" default={100}>
+  Batch size for upsert operations (defaults to `PINECONE_CHUNK_SIZE` env var)
+</ParamField>
+
+<ParamField path="textKey" type="string" default="text">
+  Metadata key for storing text content
+</ParamField>
+
+## Prerequisites
+
+### Create Pinecone Index
+
+1. Sign up at [Pinecone](https://www.pinecone.io)
+2. Create an index:
+
+```typescript
+import { Pinecone } from "@pinecone-database/pinecone";
+
+const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
+
+await pc.createIndex({
+  name: "my-index",
+  dimension: 1536,  // Match your embedding model
+  metric: "cosine",
+  spec: {
+    serverless: {
+      cloud: "aws",
+      region: "us-east-1"
+    }
+  }
+});
+```
+
+## Configuration
+
+### Environment Variables
+
+```bash
+PINECONE_API_KEY=your-api-key
+PINECONE_INDEX_NAME=my-index
+PINECONE_NAMESPACE=default  # Optional
+PINECONE_CHUNK_SIZE=100     # Optional
+```
+
+### With Custom Client
+
+```typescript
+import { Pinecone } from "@pinecone-database/pinecone";
+import { PineconeVectorStore } from "@llamaindex/pinecone";
+
+const pc = new Pinecone({ apiKey: "your-api-key" });
+
+const vectorStore = new PineconeVectorStore({
+  indexName: "my-index"
+});
+
+// The store will create its own client internally
+```
+
+## Querying
+
+### Basic Query
+
+```typescript
+const index = await VectorStoreIndex.fromVectorStore(vectorStore);
+
+const retriever = index.asRetriever({
+  similarityTopK: 5
+});
+
+const nodes = await retriever.retrieve("query text");
+
+nodes.forEach(node => {
+  console.log(`Score: ${node.score}`);
+  console.log(`Text: ${node.node.text}`);
+});
+```
+
+### Metadata Filtering
+
+```typescript
+import { MetadataFilters } from "@llamaindex/core/vector-store";
+
+const documents = [
+  new Document({
+    text: "Doc 1",
+    metadata: { category: "tech", year: 2023 }
+  }),
+  new Document({
+    text: "Doc 2",
+    metadata: { category: "science", year: 2024 }
+  })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+const retriever = index.asRetriever({
+  filters: new MetadataFilters({
+    filters: [
+      { key: "category", value: "tech" },
+      { key: "year", value: 2023, operator: "==" }
+    ]
+  })
+});
+
+const nodes = await retriever.retrieve("query");
+```
+
+## Namespaces
+
+Organize vectors into namespaces:
+
+```typescript
+// Store in "production" namespace
+const prodStore = new PineconeVectorStore({
+  indexName: "my-index",
+  namespace: "production"
+});
+
+// Store in "staging" namespace
+const stagingStore = new PineconeVectorStore({
+  indexName: "my-index",
+  namespace: "staging"
+});
+```
+
+## Managing Data
+
+### Add Documents
+
+```typescript
+const newDoc = new Document({ text: "New content" });
+await index.insert(newDoc);
+```
+
+### Delete by Document ID
+
+```typescript
+await index.deleteRef(docId);
+```
+
+### Clear Index
+
+```typescript
+await vectorStore.clearIndex();
+// Note: Not supported on Pinecone Starter (free) tier
+```
+
+## Hybrid Search
+
+Combine vector and metadata search:
+
+```typescript
+const retriever = index.asRetriever({
+  similarityTopK: 10,
+  filters: new MetadataFilters({
+    filters: [
+      { key: "source", value: "documentation" },
+      { key: "date", value: "2024-01-01", operator: ">=" }
+    ]
+  })
+});
+```
+
+## Batch Operations
+
+```typescript
+const vectorStore = new PineconeVectorStore({
+  indexName: "my-index",
+  chunkSize: 200  // Process 200 vectors at a time
+});
+
+const manyDocuments = [...];  // Large document array
+
+const index = await VectorStoreIndex.fromDocuments(manyDocuments, {
+  storageContext: { vectorStore }
+});
+// Automatically batches upserts
+```
+
+## Loading Existing Index
+
+```typescript
+import { VectorStoreIndex } from "llamaindex";
+import { PineconeVectorStore } from "@llamaindex/pinecone";
+
+const vectorStore = new PineconeVectorStore({
+  indexName: "existing-index"
+});
+
+const index = await VectorStoreIndex.fromVectorStore(vectorStore);
+
+const queryEngine = index.asQueryEngine();
+```
+
+## Metrics
+
+Pinecone supports different distance metrics:
+
+```typescript
+// When creating index (via Pinecone SDK)
+await pc.createIndex({
+  name: "my-index",
+  dimension: 1536,
+  metric: "cosine"  // or "euclidean", "dotproduct"
+});
+```
+
+## Index Stats
+
+```typescript
+const client = await vectorStore.client();
+const index = await vectorStore.index();
+
+const stats = await index.describeIndexStats();
+console.log("Total vectors:", stats.totalRecordCount);
+console.log("Dimensions:", stats.dimension);
+```
+
+## Serverless vs Pod-based
+
+### Serverless (Recommended)
+
+```typescript
+await pc.createIndex({
+  name: "serverless-index",
+  dimension: 1536,
+  metric: "cosine",
+  spec: {
+    serverless: {
+      cloud: "aws",
+      region: "us-east-1"
+    }
+  }
+});
+```
+
+### Pod-based
+
+```typescript
+await pc.createIndex({
+  name: "pod-index",
+  dimension: 1536,
+  metric: "cosine",
+  spec: {
+    pod: {
+      environment: "us-east1-gcp",
+      podType: "p1.x1",
+      pods: 1
+    }
+  }
+});
+```
+
+## Best Practices
+
+1. **Match dimensions**: Ensure index dimension matches embedding model
+2. **Use namespaces**: Organize data by environment or use case
+3. **Batch operations**: Use appropriate chunk size for performance
+4. **Monitor costs**: Track storage and query usage
+5. **Use metadata filters**: Narrow search scope for better results
+6. **Choose right metric**: Cosine for normalized vectors, dotproduct for speed
+
+## Troubleshooting
+
+### Index Not Found
+
+```typescript
+try {
+  const client = await vectorStore.client();
+  const indexList = await client.listIndexes();
+  console.log("Available indexes:", indexList);
+} catch (error) {
+  console.error("Error:", error.message);
+}
+```
+
+### Dimension Mismatch
+
+Ensure embedding model dimensions match index:
+
+```typescript
+import { OpenAIEmbedding } from "@llamaindex/openai";
+
+// text-embedding-3-small: 1536 dimensions (default)
+const embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-small"
+});
+
+// Pinecone index must also be 1536 dimensions
+```
+
+## See Also
+
+- [Pinecone Documentation](https://docs.pinecone.io)
+- [Vector Store Index](/api/llamaindex/indices)
+- [Core Schema](/api/core/schema)

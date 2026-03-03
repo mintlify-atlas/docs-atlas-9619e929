@@ -1,0 +1,216 @@
+---
+title: Basic RAG Example
+description: Build a simple retrieval-augmented generation application
+---
+
+This example demonstrates how to build a basic RAG (Retrieval-Augmented Generation) application using LlamaIndex.TS.
+
+## Overview
+
+RAG applications enhance LLM responses by retrieving relevant information from your documents before generating answers. This example shows:
+
+1. Loading documents
+2. Creating a vector index
+3. Querying with a query engine
+4. Interactive question-answering
+
+## Complete Example
+
+Here's a complete working RAG application:
+
+```typescript title="rag-starter.ts"
+import { Document, VectorStoreIndex } from "llamaindex";
+import fs from "node:fs/promises";
+import { createInterface } from "node:readline/promises";
+
+async function main() {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+
+  if (!process.env.OPENAI_API_KEY) {
+    console.log("OpenAI API key not found in environment variables.");
+    console.log(
+      "You can get an API key at https://platform.openai.com/account/api-keys",
+    );
+    process.env.OPENAI_API_KEY = await rl.question(
+      "Please enter your OpenAI API key: ",
+    );
+  }
+
+  // Load document
+  const path = "node_modules/llamaindex/examples/abramov.txt";
+  const essay = await fs.readFile(path, "utf-8");
+  const document = new Document({ text: essay, id_: path });
+
+  // Create vector index
+  const index = await VectorStoreIndex.fromDocuments([document]);
+  const queryEngine = index.asQueryEngine();
+
+  console.log(
+    "Try asking a question about the essay!",
+    "\nExample: What did the author do in college?",
+    "\n==============================\n",
+  );
+  
+  // Interactive query loop
+  while (true) {
+    const query = await rl.question("Query: ");
+    const response = await queryEngine.query({
+      query,
+    });
+    console.log(response.toString());
+  }
+}
+
+main().catch(console.error);
+```
+
+## Step-by-Step Explanation
+
+### 1. Import Dependencies
+
+```typescript
+import { Document, VectorStoreIndex } from "llamaindex";
+import fs from "node:fs/promises";
+import { createInterface } from "node:readline/promises";
+```
+
+- `Document` - Represents a document to be indexed
+- `VectorStoreIndex` - Creates a vector store for semantic search
+- `fs` - Read files from the filesystem
+- `createInterface` - Interactive CLI input
+
+### 2. Load Your Document
+
+```typescript
+const path = "node_modules/llamaindex/examples/abramov.txt";
+const essay = await fs.readFile(path, "utf-8");
+const document = new Document({ text: essay, id_: path });
+```
+
+The `Document` class wraps your text content with optional metadata and an identifier.
+
+### 3. Create Vector Index
+
+```typescript
+const index = await VectorStoreIndex.fromDocuments([document]);
+```
+
+This automatically:
+- Splits the document into chunks
+- Creates embeddings for each chunk
+- Stores them in a vector store
+
+### 4. Create Query Engine
+
+```typescript
+const queryEngine = index.asQueryEngine();
+```
+
+The query engine handles:
+- Embedding your query
+- Retrieving relevant chunks
+- Generating a response with the LLM
+
+### 5. Query Your Data
+
+```typescript
+const response = await queryEngine.query({
+  query: "What did the author do in college?",
+});
+console.log(response.toString());
+```
+
+## Advanced: With Source Attribution
+
+Get source references with your responses:
+
+```typescript
+import { MetadataMode, NodeWithScore } from "llamaindex";
+
+const { message, sourceNodes } = await queryEngine.query({
+  query: "What did the author do in college?",
+});
+
+console.log(message.content);
+
+if (sourceNodes) {
+  sourceNodes.forEach((source: NodeWithScore, index: number) => {
+    console.log(
+      `\n${index}: Score: ${source.score} - ${source.node.getContent(MetadataMode.NONE).substring(0, 50)}...\n`,
+    );
+  });
+}
+```
+
+## Custom Settings
+
+Configure LLM and embedding models:
+
+```typescript
+import { openai, OpenAIEmbedding } from "@llamaindex/openai";
+import { Settings } from "llamaindex";
+
+Settings.llm = openai({
+  apiKey: process.env.OPENAI_API_KEY,
+  model: "gpt-4o",
+});
+Settings.embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-small",
+});
+```
+
+## Running the Example
+
+1. Install dependencies:
+
+```bash
+npm install llamaindex @llamaindex/openai
+```
+
+2. Set your API key:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+3. Run the example:
+
+```bash
+npx tsx rag-starter.ts
+```
+
+## Try It Yourself
+
+Modify the example to:
+
+- Load your own documents
+- Use different LLM providers (Anthropic, Groq, etc.)
+- Customize chunking strategies
+- Add metadata filtering
+- Implement streaming responses
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Chat Engine" href="/guides/chat-engine" icon="comments">
+    Build conversational interfaces with chat history
+  </Card>
+  
+  <Card title="Vector Stores" href="/guides/storage" icon="database">
+    Use production vector databases like Pinecone, Qdrant, or Weaviate
+  </Card>
+  
+  <Card title="Document Loading" href="/guides/ingestion" icon="file-import">
+    Load PDFs, web pages, and other document types
+  </Card>
+  
+  <Card title="Advanced RAG" href="/guides/query-engine" icon="gears">
+    Implement advanced retrieval patterns
+  </Card>
+</CardGroup>
+
+## Related Examples
+
+- **[Chat Engine](https://github.com/run-llama/LlamaIndexTS/blob/main/packages/llamaindex/examples/rag/chatEngine.ts)** - Conversational RAG
+- **[Metadata Filtering](https://github.com/run-llama/LlamaIndexTS/tree/main/packages/llamaindex/examples/storage/metadata-filter)** - Filter by metadata
+- **[Sentence Window](https://github.com/run-llama/LlamaIndexTS/blob/main/packages/llamaindex/examples/rag/sentenceWindow.ts)** - Advanced chunking

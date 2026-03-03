@@ -1,0 +1,416 @@
+---
+title: Multimodal Examples
+description: Work with images, text, and vision models in LlamaIndex.TS
+---
+
+Learn how to build multimodal applications that process both text and images using vision-language models.
+
+## Overview
+
+Multimodal capabilities enable:
+- Image understanding and analysis
+- Visual question answering
+- Multimodal RAG (text + images)
+- CLIP embeddings for image search
+- Combined text and image processing
+
+## Image Chat Example
+
+Analyze images using vision models:
+
+```typescript title="multimodal-chat.ts"
+import { OpenAI } from "@llamaindex/openai";
+import { Settings, SimpleChatEngine, imageToDataUrl } from "llamaindex";
+import fs from "node:fs/promises";
+import path from "path";
+
+// Configure vision model
+Settings.llm = new OpenAI({ model: "gpt-4o-mini", maxTokens: 512 });
+
+async function main() {
+  const chatEngine = new SimpleChatEngine();
+
+  // Load and convert image to data URL
+  const imagePath = path.join(__dirname, "data", "image.jpg");
+  
+  // Option 1: Read buffer and convert
+  const imageBuffer = await fs.readFile(imagePath);
+  const dataUrl = await imageToDataUrl(imageBuffer);
+  
+  // Option 2: Direct path conversion
+  // const dataUrl = await imageToDataUrl(imagePath);
+
+  // Chat with image
+  const response = await chatEngine.chat({
+    message: [
+      {
+        type: "text",
+        text: "What is in this image?",
+      },
+      {
+        type: "image_url",
+        image_url: {
+          url: dataUrl,
+        },
+      },
+    ],
+  });
+
+  console.log(response.message.content);
+}
+
+main().catch(console.error);
+```
+
+## Multimodal RAG Example
+
+Build a RAG system that retrieves both text and images:
+
+```typescript title="multimodal-rag.ts"
+import { OpenAI } from "@llamaindex/openai";
+import {
+  extractText,
+  getResponseSynthesizer,
+  Settings,
+  VectorStoreIndex,
+} from "llamaindex";
+
+// Configure settings
+Settings.chunkSize = 512;
+Settings.chunkOverlap = 20;
+Settings.llm = new OpenAI({ model: "gpt-4-turbo", maxTokens: 512 });
+
+// Add retrieval callback
+Settings.callbackManager.on("retrieve-end", (event) => {
+  const { nodes, query } = event.detail;
+  const text = extractText(query);
+  console.log(`Retrieved ${nodes.length} nodes for query: ${text}`);
+});
+
+async function main() {
+  // Initialize multimodal index
+  const index = await VectorStoreIndex.init({
+    nodes: [], // Add your multimodal nodes
+  });
+
+  // Create multimodal query engine
+  const queryEngine = index.asQueryEngine({
+    responseSynthesizer: getResponseSynthesizer("multi_modal"),
+    retriever: index.asRetriever({
+      topK: { TEXT: 3, IMAGE: 1, AUDIO: 0 },
+    }),
+  });
+  
+  // Query with streaming
+  const stream = await queryEngine.query({
+    query: "Tell me more about Vincent van Gogh's famous paintings",
+    stream: true,
+  });
+  
+  for await (const chunk of stream) {
+    process.stdout.write(chunk.response);
+  }
+  process.stdout.write("\n");
+}
+
+main().catch(console.error);
+```
+
+## Step-by-Step Explanation
+
+### 1. Image Processing
+
+```typescript
+import { imageToDataUrl } from "llamaindex";
+import fs from "node:fs/promises";
+
+// From buffer
+const imageBuffer = await fs.readFile("image.jpg");
+const dataUrl = await imageToDataUrl(imageBuffer);
+
+// From file path (convenience)
+const dataUrl2 = await imageToDataUrl("image.jpg");
+```
+
+The `imageToDataUrl` utility converts images to base64 data URLs that vision models can process.
+
+### 2. Vision Model Configuration
+
+```typescript
+import { OpenAI } from "@llamaindex/openai";
+import { Settings } from "llamaindex";
+
+Settings.llm = new OpenAI({
+  model: "gpt-4o-mini", // or "gpt-4o", "gpt-4-turbo"
+  maxTokens: 512,
+});
+```
+
+### 3. Multimodal Messages
+
+Combine text and images in messages:
+
+```typescript
+const response = await chatEngine.chat({
+  message: [
+    {
+      type: "text",
+      text: "Describe this image in detail",
+    },
+    {
+      type: "image_url",
+      image_url: {
+        url: dataUrl, // Base64 data URL or HTTP URL
+      },
+    },
+  ],
+});
+```
+
+### 4. Multimodal Retrieval
+
+Retrieve different content types:
+
+```typescript
+const retriever = index.asRetriever({
+  topK: {
+    TEXT: 3,   // Retrieve top 3 text chunks
+    IMAGE: 1,  // Retrieve top 1 image
+    AUDIO: 0,  // Don't retrieve audio
+  },
+});
+```
+
+## CLIP Embeddings
+
+Use CLIP for image and text embeddings:
+
+```typescript
+import { ClipEmbedding } from "@llamaindex/clip";
+import { Settings } from "llamaindex";
+
+Settings.embedModel = new ClipEmbedding({
+  modelType: "clip-ViT-B-32",
+});
+
+// Embed images and text in same space
+const imageEmbedding = await Settings.embedModel.getImageEmbedding(
+  imagePath
+);
+const textEmbedding = await Settings.embedModel.getTextEmbedding(
+  "a photo of a cat"
+);
+
+// Calculate similarity
+const similarity = cosineSimilarity(imageEmbedding, textEmbedding);
+```
+
+## Image Search Example
+
+Build an image search engine:
+
+```typescript
+import { ClipEmbedding } from "@llamaindex/clip";
+import { VectorStoreIndex, ImageNode } from "llamaindex";
+import fs from "fs/promises";
+import path from "path";
+
+Settings.embedModel = new ClipEmbedding();
+
+async function buildImageIndex() {
+  const imageDir = "./images";
+  const files = await fs.readdir(imageDir);
+  
+  const imageNodes = files
+    .filter(f => /\.(jpg|jpeg|png)$/i.test(f))
+    .map(file => {
+      return new ImageNode({
+        image: path.join(imageDir, file),
+        metadata: { filename: file },
+      });
+    });
+  
+  const index = await VectorStoreIndex.fromDocuments(imageNodes);
+  return index;
+}
+
+async function searchImages(query: string) {
+  const index = await buildImageIndex();
+  const retriever = index.asRetriever({ topK: 5 });
+  
+  const results = await retriever.retrieve(query);
+  
+  results.forEach((result, i) => {
+    console.log(`${i + 1}. ${result.node.metadata.filename} (score: ${result.score})`);
+  });
+}
+
+searchImages("sunset over mountains");
+```
+
+## Running the Examples
+
+1. Install dependencies:
+
+```bash
+npm install llamaindex @llamaindex/openai @llamaindex/clip
+```
+
+2. Set your API key:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+3. Run an example:
+
+```bash
+npx tsx multimodal-chat.ts
+```
+
+## Supported Vision Models
+
+### OpenAI
+
+- **gpt-4o** - Latest multimodal model
+- **gpt-4o-mini** - Faster, more cost-effective
+- **gpt-4-turbo** - Previous generation with vision
+- **gpt-4-vision-preview** - Legacy vision model
+
+### Anthropic
+
+```typescript
+import { claude } from "@llamaindex/anthropic";
+
+Settings.llm = claude({
+  model: "claude-3-5-sonnet-20241022",
+});
+```
+
+- **claude-3-5-sonnet** - Best vision + reasoning
+- **claude-3-opus** - Highest capability
+- **claude-3-sonnet** - Balanced performance
+- **claude-3-haiku** - Fast and cost-effective
+
+### Google Gemini
+
+```typescript
+import { gemini } from "@llamaindex/google";
+
+Settings.llm = gemini({
+  model: "gemini-1.5-pro",
+});
+```
+
+## Use Cases
+
+### Visual Question Answering
+
+```typescript
+const questions = [
+  "What objects are in this image?",
+  "What is the dominant color?",
+  "Are there any people in the image?",
+  "What is the setting or location?",
+];
+
+for (const question of questions) {
+  const response = await chatEngine.chat({
+    message: [
+      { type: "text", text: question },
+      { type: "image_url", image_url: { url: dataUrl } },
+    ],
+  });
+  console.log(`Q: ${question}\nA: ${response.message.content}\n`);
+}
+```
+
+### Document Analysis
+
+Extract information from documents:
+
+```typescript
+const response = await chatEngine.chat({
+  message: [
+    {
+      type: "text",
+      text: "Extract all text from this document and structure it as JSON",
+    },
+    { type: "image_url", image_url: { url: documentImageUrl } },
+  ],
+});
+```
+
+### Product Cataloging
+
+Automate product descriptions:
+
+```typescript
+const response = await chatEngine.chat({
+  message: [
+    {
+      type: "text",
+      text: "Generate a product title, description, and tags for this item",
+    },
+    { type: "image_url", image_url: { url: productImageUrl } },
+  ],
+});
+```
+
+## Best Practices
+
+### Image Quality
+
+- Use high-resolution images for better results
+- Ensure images are well-lit and clear
+- Crop to relevant areas when possible
+
+### Token Usage
+
+- Images consume many tokens (varies by resolution)
+- Use `maxTokens` to control response length
+- Consider `gpt-4o-mini` for cost optimization
+
+### Error Handling
+
+```typescript
+try {
+  const dataUrl = await imageToDataUrl(imagePath);
+  const response = await chatEngine.chat({ message: [...] });
+} catch (error) {
+  if (error.message.includes("file not found")) {
+    console.error("Image file not found");
+  } else if (error.message.includes("invalid image")) {
+    console.error("Invalid image format");
+  } else {
+    throw error;
+  }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="CLIP Embeddings" href="/guides/embeddings" icon="diagram-project">
+    Learn more about CLIP and multimodal embeddings
+  </Card>
+  
+  <Card title="Vision Models" href="/guides/llms" icon="eye">
+    Explore different vision-language models
+  </Card>
+  
+  <Card title="RAG with Images" href="/guides/query-engine" icon="images">
+    Build advanced multimodal RAG systems
+  </Card>
+  
+  <Card title="Custom Readers" href="/guides/readers" icon="file-import">
+    Create custom image readers and processors
+  </Card>
+</CardGroup>
+
+## Related Examples
+
+- **[Multimodal Chat](https://github.com/run-llama/LlamaIndexTS/blob/main/packages/llamaindex/examples/multimodal/chat.ts)** - Simple image chat
+- **[Multimodal RAG](https://github.com/run-llama/LlamaIndexTS/blob/main/packages/llamaindex/examples/multimodal/rag.ts)** - Text + image retrieval
+- **[CLIP Embeddings](https://github.com/run-llama/LlamaIndexTS/blob/main/packages/llamaindex/examples/multimodal/clip.ts)** - Image search with CLIP
+- **[Multimodal Context](https://github.com/run-llama/LlamaIndexTS/blob/main/packages/llamaindex/examples/multimodal/context.ts)** - Context-aware multimodal chat

@@ -1,0 +1,327 @@
+---
+title: "Chat Engine"
+description: "Chat engines for conversational interactions over indexed data"
+---
+
+## Overview
+
+Chat engines enable conversational interactions with your data, maintaining chat history and context across multiple turns.
+
+## BaseChatEngine
+
+Abstract base class for all chat engines.
+
+```typescript
+import { BaseChatEngine } from "@llamaindex/core/chat-engine";
+```
+
+### Properties
+
+<ParamField path="chatHistory" type="ChatMessage[] | Promise<ChatMessage[]>">
+  The conversation history
+</ParamField>
+
+### Methods
+
+<ParamField path="chat" type="method">
+  Send a message and get a response
+  
+  **Non-streaming:**
+  ```typescript
+  chat(params: NonStreamingChatEngineParams): Promise<EngineResponse>
+  ```
+  
+  **Streaming:**
+  ```typescript
+  chat(params: StreamingChatEngineParams): Promise<AsyncIterable<EngineResponse>>
+  ```
+  
+  <Expandable title="Parameters">
+    <ParamField path="message" type="string | MessageContentDetail[]" required>
+      The user message (text or multi-modal)
+    </ParamField>
+    <ParamField path="stream" type="boolean">
+      Whether to stream the response
+    </ParamField>
+    <ParamField path="chatHistory" type="ChatMessage[] | Memory">
+      Optional custom chat history or memory
+    </ParamField>
+    <ParamField path="chatOptions" type="object">
+      Provider-specific chat options
+    </ParamField>
+  </Expandable>
+  
+  <Expandable title="Returns">
+    <ResponseField name="response" type="string">
+      The assistant's response text
+    </ResponseField>
+    <ResponseField name="sourceNodes" type="NodeWithScore[]">
+      Retrieved source nodes (context chat engine only)
+    </ResponseField>
+    <ResponseField name="metadata" type="Record<string, any>">
+      Additional response metadata
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+## SimpleChatEngine
+
+Basic chat engine without retrieval, just conversational LLM.
+
+```typescript
+import { SimpleChatEngine } from "@llamaindex/core/chat-engine";
+import { OpenAI } from "@llamaindex/openai";
+```
+
+### Example
+
+```typescript
+const llm = new OpenAI({ model: "gpt-4" });
+const chatEngine = new SimpleChatEngine({ llm });
+
+const response1 = await chatEngine.chat({
+  message: "Hello! My name is Alice."
+});
+console.log(response1.response); // "Hello Alice! How can I help you?"
+
+const response2 = await chatEngine.chat({
+  message: "What's my name?"
+});
+console.log(response2.response); // "Your name is Alice."
+```
+
+## ContextChatEngine
+
+Chat engine with retrieval - retrieves relevant context for each message.
+
+```typescript
+import { ContextChatEngine } from "@llamaindex/core/chat-engine";
+```
+
+### Constructor Options
+
+<ParamField path="retriever" type="BaseRetriever" required>
+  Retriever for fetching relevant context
+</ParamField>
+
+<ParamField path="llm" type="LLM">
+  Language model (defaults to Settings.llm)
+</ParamField>
+
+<ParamField path="chatHistory" type="ChatMessage[]">
+  Initial chat history
+</ParamField>
+
+<ParamField path="systemPrompt" type="string">
+  System prompt for the chat
+</ParamField>
+
+<ParamField path="contextSystemPrompt" type="string">
+  Template for injecting retrieved context
+</ParamField>
+
+### Example
+
+```typescript
+import { VectorStoreIndex } from "llamaindex";
+import { Document } from "@llamaindex/core/schema";
+
+const documents = [
+  new Document({ text: "The company was founded in 2020." }),
+  new Document({ text: "Our main product is a data framework." })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+const chatEngine = index.asChatEngine();
+
+const response = await chatEngine.chat({
+  message: "When was the company founded?"
+});
+
+console.log(response.response); // "The company was founded in 2020."
+console.log(response.sourceNodes); // Retrieved context nodes
+```
+
+## Streaming Chat
+
+```typescript
+const chatEngine = index.asChatEngine();
+
+const stream = await chatEngine.chat({
+  message: "Tell me about the company",
+  stream: true
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.response);
+}
+```
+
+## Multi-modal Chat
+
+Chat engines support images and other media:
+
+```typescript
+const response = await chatEngine.chat({
+  message: [
+    { type: "text", text: "What's in this image?" },
+    {
+      type: "image_url",
+      image_url: { url: "data:image/jpeg;base64,..." }
+    }
+  ]
+});
+```
+
+## Custom Chat History
+
+### Using ChatMemoryBuffer
+
+```typescript
+import { ChatMemoryBuffer } from "@llamaindex/core/memory";
+
+const memory = new ChatMemoryBuffer({ tokenLimit: 3000 });
+
+const response = await chatEngine.chat({
+  message: "Hello",
+  chatHistory: memory
+});
+```
+
+### Manual Chat History
+
+```typescript
+const customHistory: ChatMessage[] = [
+  { role: "user", content: "Previous question" },
+  { role: "assistant", content: "Previous answer" }
+];
+
+const response = await chatEngine.chat({
+  message: "Follow-up question",
+  chatHistory: customHistory
+});
+```
+
+## System Prompts
+
+### Setting System Prompt
+
+```typescript
+const chatEngine = index.asChatEngine({
+  systemPrompt: "You are a helpful assistant that always speaks in rhymes."
+});
+```
+
+### Custom Context Template
+
+```typescript
+const chatEngine = index.asChatEngine({
+  contextSystemPrompt: `
+    Use the following context to answer the question.
+    If you don't know, say so.
+    
+    Context:
+    {context}
+    
+    Question: {query}
+  `
+});
+```
+
+## Chat History Management
+
+### Accessing Chat History
+
+```typescript
+const response = await chatEngine.chat({
+  message: "Hello"
+});
+
+const history = await chatEngine.chatHistory;
+console.log(history);
+// [
+//   { role: "user", content: "Hello" },
+//   { role: "assistant", content: "Hi! How can I help you?" }
+// ]
+```
+
+### Resetting Chat History
+
+```typescript
+import { SimpleChatEngine } from "@llamaindex/core/chat-engine";
+
+const chatEngine = new SimpleChatEngine({ llm });
+
+// Chat history is stored in the engine
+await chatEngine.chat({ message: "Message 1" });
+await chatEngine.chat({ message: "Message 2" });
+
+// Reset by creating new engine
+const newChatEngine = new SimpleChatEngine({ llm });
+```
+
+## Retrieval Configuration
+
+```typescript
+const chatEngine = index.asChatEngine({
+  retriever: index.asRetriever({
+    similarityTopK: 5,
+    mode: "default"
+  })
+});
+```
+
+## Custom Chat Engine
+
+```typescript
+import { BaseChatEngine } from "@llamaindex/core/chat-engine";
+import { EngineResponse } from "@llamaindex/core/schema";
+
+class CustomChatEngine extends BaseChatEngine {
+  private history: ChatMessage[] = [];
+  
+  async chat(params: NonStreamingChatEngineParams): Promise<EngineResponse> {
+    const { message, chatHistory } = params;
+    
+    // Use provided history or internal history
+    const messages = chatHistory ?? this.history;
+    
+    // Add user message
+    messages.push({ role: "user", content: message });
+    
+    // Generate response (custom logic)
+    const response = await this.generateResponse(messages);
+    
+    // Add assistant message
+    const assistantMessage = { role: "assistant", content: response };
+    messages.push(assistantMessage);
+    
+    // Update internal history
+    this.history = messages;
+    
+    return {
+      response,
+      sourceNodes: [],
+      metadata: {}
+    };
+  }
+  
+  get chatHistory() {
+    return this.history;
+  }
+  
+  private async generateResponse(messages: ChatMessage[]): Promise<string> {
+    // Custom response generation
+    return "Response";
+  }
+}
+```
+
+## Best Practices
+
+1. **Use context chat engine for RAG**: Retrieves relevant information for each turn
+2. **Manage token limits**: Use ChatMemoryBuffer to prevent context overflow
+3. **Provide clear system prompts**: Guide the assistant's behavior
+4. **Stream long responses**: Better user experience for lengthy answers
+5. **Reset history periodically**: Prevent context from becoming too large or stale
+6. **Include source nodes**: Track which documents informed the response

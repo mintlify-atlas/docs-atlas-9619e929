@@ -1,0 +1,291 @@
+---
+title: "Qdrant"
+description: "Qdrant vector search engine integration"
+icon: "database"
+---
+
+## Overview
+
+Qdrant is a high-performance vector search engine with advanced filtering capabilities and production-ready features.
+
+## Installation
+
+```bash
+npm install @llamaindex/qdrant @qdrant/js-client-rest
+```
+
+## Basic Usage
+
+```typescript
+import { QdrantVectorStore } from "@llamaindex/qdrant";
+import { VectorStoreIndex, Document } from "llamaindex";
+
+const vectorStore = new QdrantVectorStore({
+  url: "http://localhost:6333",
+  collectionName: "my-collection"
+});
+
+const documents = [
+  new Document({ text: "LlamaIndex is a data framework." }),
+  new Document({ text: "Qdrant is a vector search engine." })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+const queryEngine = index.asQueryEngine();
+const response = await queryEngine.query({
+  query: "What is Qdrant?"
+});
+```
+
+## Constructor Options
+
+<ParamField path="url" type="string" default="http://localhost:6333">
+  Qdrant server URL
+</ParamField>
+
+<ParamField path="collectionName" type="string" required>
+  Name of the Qdrant collection
+</ParamField>
+
+<ParamField path="apiKey" type="string">
+  API key for Qdrant Cloud
+</ParamField>
+
+<ParamField path="batchSize" type="number" default={100}>
+  Batch size for operations
+</ParamField>
+
+## Running Qdrant
+
+### Docker
+
+```bash
+docker pull qdrant/qdrant
+docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant
+```
+
+### Qdrant Cloud
+
+Sign up at [Qdrant Cloud](https://cloud.qdrant.io) and use the provided URL and API key:
+
+```typescript
+const vectorStore = new QdrantVectorStore({
+  url: "https://xyz.cloud.qdrant.io",
+  apiKey: process.env.QDRANT_API_KEY,
+  collectionName: "my-collection"
+});
+```
+
+## Collection Configuration
+
+```typescript
+import { QdrantClient } from "@qdrant/js-client-rest";
+
+const client = new QdrantClient({ url: "http://localhost:6333" });
+
+await client.createCollection("my-collection", {
+  vectors: {
+    size: 1536,  // Embedding dimension
+    distance: "Cosine"  // or "Euclid", "Dot"
+  },
+  optimizers_config: {
+    default_segment_number: 2
+  }
+});
+```
+
+## Querying
+
+### Basic Query
+
+```typescript
+const index = await VectorStoreIndex.fromVectorStore(vectorStore);
+
+const retriever = index.asRetriever({
+  similarityTopK: 5
+});
+
+const nodes = await retriever.retrieve("query text");
+```
+
+### Metadata Filtering
+
+```typescript
+const documents = [
+  new Document({
+    text: "Doc 1",
+    metadata: { category: "tech", year: 2023 }
+  }),
+  new Document({
+    text: "Doc 2",
+    metadata: { category: "science", year: 2024 }
+  })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+const retriever = index.asRetriever({
+  filters: {
+    must: [
+      { key: "category", match: { value: "tech" } },
+      { key: "year", range: { gte: 2023 } }
+    ]
+  }
+});
+```
+
+## Advanced Filtering
+
+Qdrant supports complex filters:
+
+```typescript
+const retriever = index.asRetriever({
+  filters: {
+    must: [
+      { key: "category", match: { value: "tech" } }
+    ],
+    should: [
+      { key: "tags", match: { any: ["ai", "ml"] } }
+    ],
+    must_not: [
+      { key: "status", match: { value: "archived" } }
+    ]
+  }
+});
+```
+
+## Managing Collections
+
+### List Collections
+
+```typescript
+const client = new QdrantClient({ url: "http://localhost:6333" });
+const collections = await client.getCollections();
+console.log(collections);
+```
+
+### Delete Collection
+
+```typescript
+await client.deleteCollection("my-collection");
+```
+
+### Collection Info
+
+```typescript
+const info = await client.getCollection("my-collection");
+console.log("Vectors count:", info.vectors_count);
+console.log("Indexed vectors:", info.indexed_vectors_count);
+```
+
+## Distance Metrics
+
+```typescript
+await client.createCollection("my-collection", {
+  vectors: {
+    size: 1536,
+    distance: "Cosine"  // "Euclid", "Dot", or "Manhattan"
+  }
+});
+```
+
+## Payloads (Metadata)
+
+Qdrant stores metadata as payloads:
+
+```typescript
+const doc = new Document({
+  text: "Document text",
+  metadata: {
+    title: "My Document",
+    author: "John Doe",
+    tags: ["ai", "ml"],
+    published: new Date("2024-01-01")
+  }
+});
+```
+
+## Snapshots
+
+Create and restore snapshots:
+
+```typescript
+// Create snapshot
+const snapshot = await client.createSnapshot("my-collection");
+console.log("Snapshot:", snapshot.name);
+
+// Restore snapshot
+await client.recoverFromSnapshot("my-collection", {
+  location: snapshot.name
+});
+```
+
+## Complete Example
+
+```typescript
+import { QdrantVectorStore } from "@llamaindex/qdrant";
+import { VectorStoreIndex, Document, Settings } from "llamaindex";
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+import { QdrantClient } from "@qdrant/js-client-rest";
+
+// Configure settings
+Settings.llm = new OpenAI({ model: "gpt-4" });
+Settings.embedModel = new OpenAIEmbedding();
+
+// Create collection
+const client = new QdrantClient({ url: "http://localhost:6333" });
+
+await client.createCollection("docs", {
+  vectors: {
+    size: 1536,  // OpenAI embedding dimension
+    distance: "Cosine"
+  }
+});
+
+// Create vector store
+const vectorStore = new QdrantVectorStore({
+  url: "http://localhost:6333",
+  collectionName: "docs"
+});
+
+// Load documents
+const documents = [
+  new Document({
+    text: "LlamaIndex documentation...",
+    metadata: { source: "docs", page: 1 }
+  })
+];
+
+// Build index
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+// Query
+const queryEngine = index.asQueryEngine();
+const response = await queryEngine.query({
+  query: "What is LlamaIndex?"
+});
+
+console.log(response.response);
+```
+
+## Best Practices
+
+1. **Choose appropriate distance metric**: Cosine for text similarity
+2. **Use Qdrant Cloud for production**: Managed, scalable solution
+3. **Leverage advanced filtering**: Combine vector and metadata search
+4. **Create snapshots**: Regular backups for data safety
+5. **Monitor performance**: Use Qdrant's dashboard
+6. **Optimize segment count**: Adjust based on data size
+
+## See Also
+
+- [Qdrant Documentation](https://qdrant.tech/documentation/)
+- [Qdrant Cloud](https://cloud.qdrant.io)
+- [Vector Store Index](/api/llamaindex/indices)

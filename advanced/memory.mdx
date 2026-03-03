@@ -1,0 +1,412 @@
+---
+title: Memory
+description: Manage chat history and conversation context
+---
+
+Memory enables chat engines to maintain conversation context across multiple turns. LlamaIndex provides a flexible memory system with short-term, long-term, and specialized memory blocks.
+
+## Overview
+
+The `Memory` class manages conversation history and ensures messages fit within the LLM's context window:
+
+```typescript
+import { Memory } from "@llamaindex/core/memory";
+import type { ChatMessage } from "@llamaindex/core/llms";
+
+const memory = new Memory();
+
+// Add messages
+await memory.add({ role: "user", content: "Hello!" });
+await memory.add({ role: "assistant", content: "Hi! How can I help?" });
+
+// Retrieve messages for LLM
+const messages: ChatMessage[] = await memory.getLLM();
+```
+
+## Basic Usage
+
+Create memory with default settings:
+
+```typescript
+import { Memory } from "@llamaindex/core/memory";
+import { Settings } from "llamaindex";
+
+const memory = new Memory([], {
+  tokenLimit: 30000,           // Default: 30k tokens
+  llm: Settings.llm,            // Use global LLM
+});
+
+// Add user and assistant messages
+await memory.add({
+  role: "user",
+  content: "What is LlamaIndex?",
+});
+
+await memory.add({
+  role: "assistant",
+  content: "LlamaIndex is a data framework for LLM applications.",
+});
+
+// Get messages within token limit
+const messages = await memory.getLLM();
+console.log(messages.length); // 2
+```
+
+## Memory Adapters
+
+Memory supports different message formats through adapters:
+
+### LlamaIndex Format (Default)
+
+```typescript
+const messages = await memory.get({ type: "llamaindex" });
+// Returns: ChatMessage[]
+```
+
+### Vercel AI SDK Format
+
+```typescript
+import type { Message } from "ai";
+
+const messages = await memory.get({ type: "vercel" });
+// Returns: Message[] (Vercel AI SDK format)
+```
+
+### Custom Adapters
+
+```typescript
+import { MessageAdapter } from "@llamaindex/core/memory/adapter";
+
+class CustomAdapter implements MessageAdapter<MyMessageType, {}> {
+  isCompatible(message: unknown): boolean {
+    return typeof message === "object" && "text" in message;
+  }
+
+  toMemory(message: MyMessageType): MemoryMessage {
+    return {
+      id: generateId(),
+      role: message.role,
+      content: message.text,
+      createdAt: new Date(),
+    };
+  }
+
+  fromMemory(message: MemoryMessage): MyMessageType {
+    return {
+      role: message.role,
+      text: message.content,
+    };
+  }
+}
+
+const memory = new Memory([], {
+  customAdapters: {
+    custom: new CustomAdapter(),
+  },
+});
+```
+
+## Context Window Management
+
+Memory automatically manages token limits:
+
+```typescript
+const memory = new Memory([], {
+  tokenLimit: 4000,
+  shortTermTokenLimitRatio: 0.7, // 70% for short-term, 30% for long-term
+});
+
+// Add many messages
+for (let i = 0; i < 100; i++) {
+  await memory.add({
+    role: i % 2 === 0 ? "user" : "assistant",
+    content: `Message ${i}`,
+  });
+}
+
+// Only recent messages within token limit are returned
+const messages = await memory.getLLM();
+console.log(messages.length); // Fits within 4000 tokens
+```
+
+### Dynamic Token Limits
+
+Token limits adapt to the LLM's context window:
+
+```typescript
+import { OpenAI } from "@llamaindex/openai";
+
+const llm = new OpenAI({ model: "gpt-4-turbo" });
+
+const memory = new Memory([], { llm });
+
+// Token limit = 70% of LLM's context window
+const messages = await memory.getLLM(llm);
+```
+
+## Memory Blocks
+
+Memory blocks provide specialized long-term memory storage:
+
+### Vector Memory Block
+
+Stores conversations in a vector store for semantic retrieval:
+
+```typescript
+import { VectorMemoryBlock } from "@llamaindex/core/memory/block";
+import { SimpleVectorStore } from "llamaindex/vector-store";
+import { OpenAIEmbedding } from "@llamaindex/openai";
+
+const vectorBlock = new VectorMemoryBlock({
+  id: "user-123-memory",
+  vectorStore: new SimpleVectorStore(),
+  embedModel: new OpenAIEmbedding(),
+  priority: 1,              // Higher priority = included first
+  isLongTerm: true,         // Stores processed messages long-term
+  retrievalContextWindow: 5, // Use last 5 messages for retrieval
+  queryOptions: {
+    similarityTopK: 2,
+    sessionFilterKey: "session_id",
+  },
+});
+
+const memory = new Memory([], {
+  memoryBlocks: [vectorBlock],
+});
+
+// Messages are automatically stored in vector memory
+await memory.add({ role: "user", content: "I like pizza" });
+await memory.add({ role: "assistant", content: "Great choice!" });
+
+// Later, relevant memories are retrieved
+await memory.add({ role: "user", content: "What food do I like?" });
+const messages = await memory.getLLM();
+// Includes retrieved "I like pizza" from vector memory
+```
+
+### Fact Extraction Memory Block
+
+Extracts and stores key facts from conversations:
+
+```typescript
+import { FactExtractionMemoryBlock } from "@llamaindex/core/memory/block";
+import { Settings } from "llamaindex";
+
+const factBlock = new FactExtractionMemoryBlock({
+  id: "facts",
+  llm: Settings.llm,
+  maxFacts: 10,
+  priority: 2,              // Higher priority than vector memory
+  isLongTerm: true,
+});
+
+const memory = new Memory([], {
+  memoryBlocks: [factBlock],
+});
+
+// Facts are automatically extracted
+await memory.add({
+  role: "user",
+  content: "My name is Alice and I'm a software engineer in SF.",
+});
+
+await memory.add({
+  role: "user",
+  content: "I'm working on a RAG application.",
+});
+
+// Extracted facts are included in context
+const messages = await memory.getLLM();
+// Includes extracted facts as a memory message
+```
+
+### Static Memory Block
+
+Provides fixed context (system prompts, instructions):
+
+```typescript
+import { StaticMemoryBlock } from "@llamaindex/core/memory/block";
+
+const staticBlock = new StaticMemoryBlock({
+  id: "system-prompt",
+  content: "You are a helpful AI assistant specializing in TypeScript.",
+  priority: 0,  // Priority 0 = always included first
+});
+
+const memory = new Memory([], {
+  memoryBlocks: [staticBlock],
+});
+
+// Static content always appears first
+const messages = await memory.getLLM();
+// messages[0] contains the system prompt
+```
+
+### Custom Memory Blocks
+
+Implement custom memory logic:
+
+```typescript
+import { BaseMemoryBlock } from "@llamaindex/core/memory/block";
+import type { MemoryMessage } from "@llamaindex/core/memory";
+
+class SummaryMemoryBlock extends BaseMemoryBlock {
+  private summary: string = "";
+
+  async get(): Promise<MemoryMessage[]> {
+    if (!this.summary) return [];
+    
+    return [{
+      id: this.id,
+      role: "memory",
+      content: `Conversation summary: ${this.summary}`,
+    }];
+  }
+
+  async put(messages: MemoryMessage[]): Promise<void> {
+    // Summarize the messages
+    const texts = messages.map(m => `${m.role}: ${m.content}`);
+    this.summary = `Discussed: ${texts.join(", ")}`;
+  }
+}
+
+const summaryBlock = new SummaryMemoryBlock({
+  id: "summary",
+  priority: 1,
+  isLongTerm: true,
+});
+```
+
+## Memory Priority System
+
+Memory blocks are included based on priority:
+
+```typescript
+const memory = new Memory([], {
+  memoryBlocks: [
+    new StaticMemoryBlock({ id: "system", priority: 0 }),      // Always first
+    new FactExtractionMemoryBlock({ id: "facts", priority: 2 }), // High priority
+    new VectorMemoryBlock({ id: "vector", priority: 1 }),       // Medium priority
+  ],
+  shortTermTokenLimitRatio: 0.7,
+});
+
+// Retrieval order:
+// 1. Fixed blocks (priority=0) - always included
+// 2. Long-term blocks (priority > 0, highest first)
+// 3. Short-term messages (most recent)
+// 4. Transient messages (optional, passed at retrieval time)
+```
+
+## Transient Messages
+
+Include temporary messages without adding them to history:
+
+```typescript
+const currentQuery = {
+  role: "user" as const,
+  content: "What did we discuss about pizza?",
+};
+
+// Include currentQuery without adding to memory
+const messages = await memory.getLLM(
+  undefined, // Use default LLM
+  [currentQuery] // Transient messages
+);
+
+// currentQuery is included but not stored
+```
+
+## Memory Snapshots
+
+Save and restore memory state:
+
+```typescript
+// Create snapshot
+const snapshot = memory.snapshot();
+await saveToDatabase(snapshot);
+
+// Restore from snapshot
+const savedSnapshot = await loadFromDatabase();
+const data = JSON.parse(savedSnapshot);
+
+const restoredMemory = new Memory(data.messages, {
+  memoryCursor: data.memoryCursor,
+  memoryBlocks: [/* recreate blocks */],
+});
+```
+
+**Note:** Memory blocks are not included in snapshots and must be recreated.
+
+## Using with Chat Engines
+
+Integrate memory with chat engines:
+
+```typescript
+import { ContextChatEngine } from "@llamaindex/core/chat-engine";
+import { Memory } from "@llamaindex/core/memory";
+
+const memory = new Memory();
+
+const chatEngine = new ContextChatEngine({
+  retriever: index.asRetriever(),
+  chatHistory: memory,
+});
+
+const response = await chatEngine.chat({
+  message: "What is LlamaIndex?",
+});
+
+// Memory is automatically updated
+const history = await memory.getLLM();
+```
+
+## Clearing Memory
+
+Reset conversation history:
+
+```typescript
+await memory.clear();
+
+// Memory is empty
+const messages = await memory.getLLM();
+console.log(messages.length); // 0
+```
+
+## Best Practices
+
+**Token Management:**
+
+- Set `tokenLimit` to ~70% of your LLM's context window
+- Adjust `shortTermTokenLimitRatio` based on your use case
+- Monitor token usage to avoid context overflow
+
+**Memory Blocks:**
+
+- Use priority=0 for fixed content (system prompts)
+- Use vector memory for long conversations
+- Use fact extraction for persistent user information
+- Limit the number of memory blocks (3-5 max)
+
+**Performance:**
+
+- Memory blocks are processed on every `add()` when short-term limit is exceeded
+- Use `isLongTerm: true` for blocks that should store historical messages
+- Cache memory snapshots to avoid reprocessing
+
+**Session Management:**
+
+- Use unique IDs for memory blocks per user/session
+- Filter vector memories by session ID
+- Clear memory between unrelated conversations
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Chat Engines" icon="comments" href="/chat-engines/overview">
+    Build conversational interfaces with memory
+  </Card>
+  <Card title="Evaluation" icon="chart-line" href="/advanced/evaluation">
+    Measure the quality of your RAG responses
+  </Card>
+</CardGroup>

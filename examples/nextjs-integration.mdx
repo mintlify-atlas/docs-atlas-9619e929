@@ -1,0 +1,490 @@
+---
+title: Next.js Integration
+description: Integrate LlamaIndex.TS with Next.js applications
+---
+
+Learn how to integrate LlamaIndex.TS with Next.js for building production-ready AI applications.
+
+## Overview
+
+LlamaIndex.TS works seamlessly with Next.js in multiple runtime environments:
+
+- **Node.js Runtime** - Full feature support with server actions and API routes
+- **Edge Runtime** - Optimized for Vercel Edge Functions
+- **Server Actions** - Direct LlamaIndex operations in React Server Components
+- **API Routes** - RESTful endpoints for LlamaIndex functionality
+
+## Next.js Configuration
+
+Use the `withLlamaIndex` wrapper for proper bundling:
+
+```javascript title="next.config.mjs"
+import withLlamaIndex from "llamaindex/next";
+
+const nextConfig = {
+  // Your Next.js config
+};
+
+export default withLlamaIndex(nextConfig);
+```
+
+This ensures:
+- Proper webpack configuration
+- Correct polyfills for edge environments
+- Optimized bundling for LlamaIndex packages
+
+## Server Actions Example
+
+Use LlamaIndex directly in server actions:
+
+```typescript title="src/actions/openai.ts"
+"use server";
+
+import { HuggingFaceEmbedding } from "@llamaindex/huggingface";
+import { OpenAI, OpenAIAgent } from "@llamaindex/openai";
+import { SimpleDirectoryReader } from "@llamaindex/readers/directory";
+import { Settings, VectorStoreIndex } from "llamaindex";
+
+// Configure settings
+Settings.llm = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  model: "gpt-4o",
+});
+
+Settings.embedModel = new HuggingFaceEmbedding({
+  modelType: "BAAI/bge-small-en-v1.5",
+});
+
+// Add callback listeners
+Settings.callbackManager.on("llm-tool-call", (event) => {
+  console.log(event.detail);
+});
+
+Settings.callbackManager.on("llm-tool-result", (event) => {
+  console.log(event.detail);
+});
+
+export async function queryDocuments(query: string) {
+  try {
+    // Load documents
+    const reader = new SimpleDirectoryReader();
+    const documents = await reader.loadData("./data");
+    
+    // Create index
+    const index = await VectorStoreIndex.fromDocuments(documents);
+
+    // Create query engine tool
+    const tools = [
+      index.queryTool({
+        options: {
+          similarityTopK: 10,
+        },
+        metadata: {
+          name: "document_search",
+          description: "Search through uploaded documents",
+        },
+      }),
+    ];
+
+    // Create agent
+    const agent = new OpenAIAgent({ tools });
+
+    const { response } = await agent.chat({
+      message: query,
+    });
+    
+    return {
+      message: response,
+    };
+  } catch (err) {
+    console.error(err);
+    return {
+      error: "Error processing query",
+    };
+  }
+}
+```
+
+### Using Server Actions in Components
+
+```typescript title="src/app/page.tsx"
+import { queryDocuments } from "@/actions/openai";
+
+export const runtime = "nodejs";
+
+export default async function Home() {
+  const result = await queryDocuments(
+    "What are the key features of this product?"
+  );
+
+  return (
+    <main>
+      <h1>Document Query</h1>
+      <p>{result.message}</p>
+    </main>
+  );
+}
+```
+
+## API Routes Example
+
+Create RESTful endpoints for LlamaIndex operations:
+
+```typescript title="src/app/api/chat/route.ts"
+import { openai } from "@llamaindex/openai";
+import { VectorStoreIndex } from "llamaindex";
+import { NextRequest, NextResponse } from "next/server";
+
+export async function POST(request: NextRequest) {
+  try {
+    const { query } = await request.json();
+    
+    // Initialize your index (use caching in production)
+    const index = await VectorStoreIndex.fromDocuments(documents);
+    const queryEngine = index.asQueryEngine();
+    
+    const response = await queryEngine.query({ query });
+    
+    return NextResponse.json({
+      response: response.toString(),
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: "Failed to process query" },
+      { status: 500 }
+    );
+  }
+}
+```
+
+### Streaming API Route
+
+```typescript title="src/app/api/chat-stream/route.ts"
+import { openai } from "@llamaindex/openai";
+import { VectorStoreIndex } from "llamaindex";
+import { NextRequest } from "next/server";
+
+export async function POST(request: NextRequest) {
+  const { query } = await request.json();
+  
+  const index = await VectorStoreIndex.fromDocuments(documents);
+  const queryEngine = index.asQueryEngine();
+  
+  const stream = await queryEngine.query({
+    query,
+    stream: true,
+  });
+  
+  const encoder = new TextEncoder();
+  
+  const readableStream = new ReadableStream({
+    async start(controller) {
+      for await (const chunk of stream) {
+        controller.enqueue(encoder.encode(chunk.response));
+      }
+      controller.close();
+    },
+  });
+  
+  return new Response(readableStream, {
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+    },
+  });
+}
+```
+
+## Edge Runtime Example
+
+Optimize for Vercel Edge Functions:
+
+```typescript title="src/app/api/edge-chat/route.ts"
+import { openai } from "@llamaindex/openai";
+import { SimpleChatEngine } from "llamaindex";
+
+export const runtime = "edge";
+
+export async function POST(request: Request) {
+  const { message } = await request.json();
+  
+  const chatEngine = new SimpleChatEngine({
+    llm: openai({ model: "gpt-4o-mini" }),
+  });
+  
+  const response = await chatEngine.chat({ message });
+  
+  return Response.json({
+    response: response.message.content,
+  });
+}
+```
+
+<Note>
+Edge runtime has limitations. Not all LlamaIndex features work in edge environments. Stick to basic LLM operations and avoid file system operations.
+</Note>
+
+## Client-Side Integration
+
+### React Hook for Chat
+
+```typescript title="src/hooks/useChat.ts"
+import { useState } from "react";
+
+export function useChat() {
+  const [messages, setMessages] = useState<Array<{role: string; content: string}>>([]);
+  const [loading, setLoading] = useState(false);
+  
+  const sendMessage = async (message: string) => {
+    setLoading(true);
+    setMessages(prev => [...prev, { role: "user", content: message }]);
+    
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: message }),
+      });
+      
+      const data = await response.json();
+      setMessages(prev => [...prev, { role: "assistant", content: data.response }]);
+    } catch (error) {
+      console.error("Chat error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  return { messages, sendMessage, loading };
+}
+```
+
+### Chat Component
+
+```typescript title="src/components/Chat.tsx"
+"use client";
+
+import { useChat } from "@/hooks/useChat";
+import { useState } from "react";
+
+export default function Chat() {
+  const { messages, sendMessage, loading } = useChat();
+  const [input, setInput] = useState("");
+  
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (input.trim()) {
+      sendMessage(input);
+      setInput("");
+    }
+  };
+  
+  return (
+    <div className="chat-container">
+      <div className="messages">
+        {messages.map((msg, i) => (
+          <div key={i} className={`message ${msg.role}`}>
+            <strong>{msg.role}:</strong> {msg.content}
+          </div>
+        ))}
+        {loading && <div>Loading...</div>}
+      </div>
+      
+      <form onSubmit={handleSubmit}>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Ask a question..."
+        />
+        <button type="submit" disabled={loading}>
+          Send
+        </button>
+      </form>
+    </div>
+  );
+}
+```
+
+## Environment Variables
+
+Configure API keys in `.env.local`:
+
+```bash title=".env.local"
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+PINECONE_API_KEY=...
+```
+
+Access in server-side code:
+
+```typescript
+const apiKey = process.env.OPENAI_API_KEY;
+```
+
+<Warning>
+Never expose API keys to the client. Only use `NEXT_PUBLIC_` prefix for non-sensitive values.
+</Warning>
+
+## Deployment Considerations
+
+### Vercel Deployment
+
+1. Install dependencies:
+
+```bash
+npm install llamaindex @llamaindex/openai @llamaindex/workflow
+```
+
+2. Configure environment variables in Vercel dashboard
+
+3. Deploy:
+
+```bash
+vercel deploy
+```
+
+### Caching Strategies
+
+Cache expensive operations:
+
+```typescript
+import { unstable_cache } from "next/cache";
+
+const getCachedIndex = unstable_cache(
+  async () => {
+    const documents = await loadDocuments();
+    return await VectorStoreIndex.fromDocuments(documents);
+  },
+  ["vector-index"],
+  { revalidate: 3600 } // Cache for 1 hour
+);
+```
+
+### Using External Vector Stores
+
+For production, use managed vector stores:
+
+```typescript
+import { PineconeVectorStore } from "@llamaindex/pinecone";
+import { VectorStoreIndex } from "llamaindex";
+
+const vectorStore = new PineconeVectorStore({
+  indexName: "my-index",
+});
+
+const index = await VectorStoreIndex.fromVectorStore(vectorStore);
+```
+
+## Complete Example Structure
+
+```
+nextjs-app/
+├── next.config.mjs          # LlamaIndex configuration
+├── .env.local               # API keys
+├── src/
+│   ├── actions/
+│   │   └── openai.ts        # Server actions
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── chat/
+│   │   │   │   └── route.ts # API routes
+│   │   │   └── edge/
+│   │   │       └── route.ts # Edge routes
+│   │   ├── layout.tsx
+│   │   └── page.tsx         # Main page
+│   ├── components/
+│   │   └── Chat.tsx         # Client components
+│   └── hooks/
+│       └── useChat.ts       # Custom hooks
+└── package.json
+```
+
+## Best Practices
+
+### 1. Separate Server and Client Code
+
+- Keep LlamaIndex operations in server actions/API routes
+- Use client components only for UI
+- Never import LlamaIndex in client components
+
+### 2. Error Handling
+
+```typescript
+try {
+  const result = await queryEngine.query({ query });
+  return { success: true, data: result };
+} catch (error) {
+  console.error("Query failed:", error);
+  return { success: false, error: "Failed to process query" };
+}
+```
+
+### 3. Loading States
+
+```typescript
+"use client";
+
+import { useState } from "react";
+import { queryDocuments } from "@/actions/openai";
+
+export default function QueryButton() {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState("");
+  
+  const handleQuery = async () => {
+    setLoading(true);
+    const response = await queryDocuments("query");
+    setResult(response.message);
+    setLoading(false);
+  };
+  
+  return (
+    <div>
+      <button onClick={handleQuery} disabled={loading}>
+        {loading ? "Loading..." : "Query"}
+      </button>
+      {result && <p>{result}</p>}
+    </div>
+  );
+}
+```
+
+### 4. Type Safety
+
+```typescript
+interface QueryResult {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
+export async function queryDocuments(query: string): Promise<QueryResult> {
+  // Implementation
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Server Actions" href="https://nextjs.org/docs/app/building-your-application/data-fetching/server-actions-and-mutations" icon="server">
+    Learn about Next.js server actions
+  </Card>
+  
+  <Card title="API Routes" href="https://nextjs.org/docs/app/building-your-application/routing/route-handlers" icon="route">
+    Next.js API route documentation
+  </Card>
+  
+  <Card title="Edge Runtime" href="https://nextjs.org/docs/app/building-your-application/rendering/edge-and-nodejs-runtimes" icon="bolt">
+    Edge and Node.js runtimes
+  </Card>
+  
+  <Card title="Vector Stores" href="/guides/storage" icon="database">
+    Production vector store integration
+  </Card>
+</CardGroup>
+
+## Related Examples
+
+- **[Next.js Node Runtime](https://github.com/run-llama/LlamaIndexTS/tree/main/e2e/examples/nextjs-node-runtime)** - Complete Node.js example
+- **[Next.js Edge Runtime](https://github.com/run-llama/LlamaIndexTS/tree/main/e2e/examples/nextjs-edge-runtime)** - Edge runtime example
+- **[Next.js Agent](https://github.com/run-llama/LlamaIndexTS/tree/main/e2e/examples/nextjs-agent)** - Agent integration
+- **[Cloudflare Workers](https://github.com/run-llama/LlamaIndexTS/tree/main/e2e/examples/cloudflare-worker-agent)** - Alternative edge platform

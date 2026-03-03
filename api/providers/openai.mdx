@@ -1,0 +1,343 @@
+---
+title: "OpenAI"
+description: "OpenAI LLM and embedding provider integration"
+icon: "openai"
+---
+
+## Overview
+
+The OpenAI provider integrates OpenAI's GPT models and embedding models with LlamaIndex.TS.
+
+## Installation
+
+```bash
+npm install @llamaindex/openai
+```
+
+## OpenAI LLM
+
+### Basic Usage
+
+```typescript
+import { OpenAI } from "@llamaindex/openai";
+
+const llm = new OpenAI({
+  model: "gpt-4o",
+  temperature: 0.1,
+  maxTokens: 512
+});
+
+const response = await llm.chat({
+  messages: [
+    { role: "system", content: "You are a helpful assistant." },
+    { role: "user", content: "What is LlamaIndex?" }
+  ]
+});
+
+console.log(response.message.content);
+```
+
+### Constructor Options
+
+<ParamField path="model" type="string" default="gpt-4o">
+  OpenAI model name. Supports GPT-4, GPT-3.5, O1, and more
+</ParamField>
+
+<ParamField path="temperature" type="number" default={0.1}>
+  Sampling temperature (0-2). Higher values mean more random outputs
+</ParamField>
+
+<ParamField path="topP" type="number" default={1}>
+  Nucleus sampling parameter
+</ParamField>
+
+<ParamField path="maxTokens" type="number">
+  Maximum tokens in the response
+</ParamField>
+
+<ParamField path="apiKey" type="string">
+  OpenAI API key (defaults to `OPENAI_API_KEY` env variable)
+</ParamField>
+
+<ParamField path="baseURL" type="string">
+  Custom API base URL (defaults to `OPENAI_BASE_URL` env variable)
+</ParamField>
+
+<ParamField path="maxRetries" type="number" default={10}>
+  Maximum number of retries for failed requests
+</ParamField>
+
+<ParamField path="timeout" type="number" default={60000}>
+  Request timeout in milliseconds
+</ParamField>
+
+<ParamField path="reasoningEffort" type="'low' | 'medium' | 'high' | 'minimal'">
+  Reasoning effort for O1 models
+</ParamField>
+
+<ParamField path="additionalChatOptions" type="object">
+  Additional OpenAI API parameters
+</ParamField>
+
+### Supported Models
+
+- **GPT-4 Series**: `gpt-4o`, `gpt-4-turbo`, `gpt-4`
+- **GPT-3.5**: `gpt-3.5-turbo`
+- **O1 Series**: `o1-preview`, `o1-mini` (reasoning models)
+
+### Streaming
+
+```typescript
+const stream = await llm.chat({
+  messages: [{ role: "user", content: "Tell me a story" }],
+  stream: true
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.delta);
+}
+```
+
+### Function Calling
+
+```typescript
+import { tool } from "@llamaindex/core/tools";
+import { z } from "zod";
+
+const weatherTool = tool({
+  name: "get_weather",
+  description: "Get current weather for a location",
+  parameters: z.object({
+    location: z.string().describe("City name")
+  }),
+  execute: async ({ location }) => {
+    return `Weather in ${location}: 72°F and sunny`;
+  }
+});
+
+const response = await llm.chat({
+  messages: [{ role: "user", content: "What's the weather in San Francisco?" }],
+  tools: [weatherTool]
+});
+```
+
+### Structured Output
+
+```typescript
+import { z } from "zod";
+
+const schema = z.object({
+  name: z.string(),
+  age: z.number(),
+  email: z.string().email()
+});
+
+const result = await llm.exec({
+  messages: [{ role: "user", content: "Extract: John is 30, email john@example.com" }],
+  responseFormat: schema
+});
+
+console.log(result.object); // { name: "John", age: 30, email: "john@example.com" }
+```
+
+### Multi-modal Input
+
+```typescript
+const response = await llm.chat({
+  messages: [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "What's in this image?" },
+        {
+          type: "image_url",
+          image_url: { url: "data:image/jpeg;base64,/9j/4AAQSkZJRg..." }
+        }
+      ]
+    }
+  ]
+});
+```
+
+### PDF Support
+
+```typescript
+const response = await llm.chat({
+  messages: [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "Summarize this PDF" },
+        {
+          type: "file",
+          data: pdfBase64Data,
+          mimeType: "application/pdf"
+        }
+      ]
+    }
+  ]
+});
+```
+
+### Audio/Video (Realtime API)
+
+OpenAI Live for realtime audio/video:
+
+```typescript
+const llm = new OpenAI({
+  model: "gpt-4o-realtime-preview",
+  voiceName: "alloy"
+});
+
+const liveSession = llm.live;
+
+await liveSession.connect({
+  audioConfig: {
+    stream: mediaStream,
+    onTrack: (track) => {
+      console.log("Audio track received", track);
+    }
+  }
+});
+```
+
+## OpenAI Embedding
+
+### Basic Usage
+
+```typescript
+import { OpenAIEmbedding } from "@llamaindex/openai";
+
+const embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-small"
+});
+
+const embedding = await embedModel.getTextEmbedding(
+  "LlamaIndex is a data framework"
+);
+
+console.log(embedding.length); // 1536
+```
+
+### Constructor Options
+
+<ParamField path="model" type="string" default="text-embedding-3-small">
+  Embedding model name
+</ParamField>
+
+<ParamField path="dimensions" type="number">
+  Output dimensions (text-embedding-3 models only)
+</ParamField>
+
+<ParamField path="apiKey" type="string">
+  OpenAI API key
+</ParamField>
+
+<ParamField path="embedBatchSize" type="number" default={10}>
+  Batch size for embedding requests
+</ParamField>
+
+### Supported Models
+
+- `text-embedding-3-small`: 1536 dimensions (default), up to 512
+- `text-embedding-3-large`: 3072 dimensions (default), up to 256
+- `text-embedding-ada-002`: 1536 dimensions (legacy)
+
+### Batch Embedding
+
+```typescript
+const texts = [
+  "First document",
+  "Second document",
+  "Third document"
+];
+
+const embeddings = await embedModel.getTextEmbeddingsBatch(texts, {
+  logProgress: true
+});
+
+console.log(embeddings.length); // 3
+```
+
+### Custom Dimensions
+
+```typescript
+const embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-small",
+  dimensions: 512  // Reduce dimensions for lower storage costs
+});
+```
+
+## Configuration
+
+### Environment Variables
+
+```bash
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=https://api.openai.com/v1  # Optional
+```
+
+### Global Settings
+
+```typescript
+import { Settings } from "llamaindex";
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+
+Settings.llm = new OpenAI({ model: "gpt-4o" });
+Settings.embedModel = new OpenAIEmbedding({ model: "text-embedding-3-small" });
+```
+
+### Custom Base URL
+
+```typescript
+const llm = new OpenAI({
+  baseURL: "https://custom-proxy.com/v1",
+  apiKey: "your-key"
+});
+```
+
+## O1 Reasoning Models
+
+```typescript
+const llm = new OpenAI({
+  model: "o1-preview",
+  reasoningEffort: "high"  // or "medium", "low"
+});
+
+const response = await llm.chat({
+  messages: [{ role: "user", content: "Solve this complex problem..." }]
+});
+```
+
+Note: O1 models don't support temperature or streaming.
+
+## Error Handling
+
+```typescript
+try {
+  const response = await llm.chat({ messages });
+} catch (error) {
+  if (error.status === 429) {
+    console.error("Rate limit exceeded");
+  } else if (error.status === 401) {
+    console.error("Invalid API key");
+  } else {
+    console.error("Error:", error.message);
+  }
+}
+```
+
+## Best Practices
+
+1. **Set appropriate temperature**: Lower (0-0.3) for factual tasks, higher (0.7-1.0) for creative tasks
+2. **Use function calling**: Better than prompt engineering for structured outputs
+3. **Stream long responses**: Improves user experience
+4. **Batch embeddings**: More efficient than individual calls
+5. **Monitor costs**: Track token usage with response.raw.usage
+6. **Use correct model**: GPT-4 for complex tasks, GPT-3.5 for simple ones
+
+## See Also
+
+- [Core LLM API](/api/core/llms)
+- [Core Embeddings API](/api/core/embeddings)
+- [OpenAI Documentation](https://platform.openai.com/docs)

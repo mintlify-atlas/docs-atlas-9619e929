@@ -1,0 +1,413 @@
+---
+title: SummaryIndex
+description: Using SummaryIndex for sequential document processing and summarization
+---
+
+The `SummaryIndex` (formerly `ListIndex`) maintains documents in sequential order without embeddings. It's ideal for summarization tasks and small document collections.
+
+## When to Use SummaryIndex
+
+Use `SummaryIndex` when:
+
+- **Summarizing documents**: Generate summaries by processing all nodes
+- **Small datasets**: When you have a limited number of documents
+- **No embeddings needed**: Want to avoid embedding costs
+- **Sequential processing**: Need to process documents in order
+- **Complete context**: Want to ensure all documents are considered
+
+**Don't use** `SummaryIndex` when:
+- You have large document collections (use `VectorStoreIndex` instead)
+- You need semantic similarity search
+- You want selective retrieval based on relevance
+
+## Building Summary Indices
+
+### From Documents
+
+```typescript
+import { Document, SummaryIndex } from "llamaindex";
+
+const documents = [
+  new Document({ text: "Chapter 1: Introduction to AI" }),
+  new Document({ text: "Chapter 2: Machine Learning Basics" }),
+  new Document({ text: "Chapter 3: Deep Learning" }),
+];
+
+const index = await SummaryIndex.fromDocuments(documents);
+```
+
+### From Nodes
+
+```typescript
+import { Document, SummaryIndex, Settings } from "llamaindex";
+
+const documents = [
+  new Document({ text: "Long document text..." }),
+];
+
+// Parse into nodes
+const nodes = await Settings.nodeParser.getNodesFromDocuments(documents);
+
+// Create index from nodes
+const index = await SummaryIndex.init({ nodes });
+```
+
+### With Storage Context
+
+```typescript
+import { storageContextFromDefaults, SummaryIndex } from "llamaindex";
+
+const storageContext = await storageContextFromDefaults({
+  persistDir: "./storage",
+});
+
+const index = await SummaryIndex.fromDocuments(documents, {
+  storageContext,
+});
+```
+
+## Querying Strategies
+
+### Default Retriever
+
+The default retriever returns **all** nodes in the index:
+
+```typescript
+import { SummaryIndex, SummaryRetrieverMode } from "llamaindex";
+
+const index = await SummaryIndex.fromDocuments(documents);
+
+const retriever = index.asRetriever({
+  mode: SummaryRetrieverMode.DEFAULT,
+});
+
+const nodes = await retriever.retrieve({ 
+  query: "Summarize the content" 
+});
+
+console.log(`Retrieved ${nodes.length} nodes`);
+// All nodes are returned with score = 1
+```
+
+### LLM Retriever
+
+Use the LLM to select relevant nodes:
+
+```typescript
+import { SummaryRetrieverMode } from "llamaindex";
+
+const retriever = index.asRetriever({
+  mode: SummaryRetrieverMode.LLM,
+});
+
+const nodes = await retriever.retrieve({ 
+  query: "What are the key points about machine learning?" 
+});
+
+// LLM selects most relevant nodes
+nodes.forEach((node) => {
+  console.log(`Score: ${node.score}`);
+  console.log(`Text: ${node.node.getText()}`);
+});
+```
+
+**How LLM Mode Works**:
+1. Sends batches of nodes to the LLM
+2. LLM evaluates relevance to the query
+3. Returns only the selected nodes with relevance scores
+
+## Query Engine
+
+### Basic Query Engine
+
+```typescript
+const queryEngine = index.asQueryEngine();
+
+const response = await queryEngine.query({
+  query: "Summarize the main topics",
+});
+
+console.log(response.toString());
+```
+
+### With Custom Response Synthesizer
+
+```typescript
+import { getResponseSynthesizer } from "@llamaindex/core/response-synthesizers";
+
+const responseSynthesizer = getResponseSynthesizer("tree_summarize");
+
+const queryEngine = index.asQueryEngine({
+  responseSynthesizer,
+});
+
+const response = await queryEngine.query({
+  query: "Create a comprehensive summary",
+});
+```
+
+**Available Response Synthesizers**:
+- `compact` - Concatenate nodes until context limit
+- `tree_summarize` - Build summary tree recursively
+- `simple_summarize` - Truncate to fit context
+- `refine` - Iteratively refine answer with each node
+
+## Chat Engine
+
+### Default Chat Mode
+
+```typescript
+import { SummaryIndex } from "llamaindex";
+
+const index = await SummaryIndex.fromDocuments(documents);
+
+const chatEngine = index.asChatEngine();
+
+const response = await chatEngine.chat({
+  message: "What is this document about?",
+});
+
+console.log(response.message.content);
+
+// Follow-up with conversation memory
+const followUp = await chatEngine.chat({
+  message: "Tell me more about that",
+});
+```
+
+### With LLM Retrieval Mode
+
+```typescript
+import { SummaryRetrieverMode } from "llamaindex";
+
+const chatEngine = index.asChatEngine({
+  mode: SummaryRetrieverMode.LLM,
+});
+
+const response = await chatEngine.chat({
+  message: "Explain the key concepts",
+});
+```
+
+## Examples
+
+### Summarization Example
+
+```typescript
+import { Document, SummaryIndex, SummaryRetrieverMode } from "llamaindex";
+import { openai } from "@llamaindex/openai";
+import { Settings } from "llamaindex";
+
+Settings.llm = openai({ model: "gpt-4o" });
+
+async function summarizeDocument() {
+  const essay = `
+    Long essay text about various topics...
+    Multiple paragraphs of content...
+  `;
+
+  const document = new Document({ text: essay });
+  const index = await SummaryIndex.fromDocuments([document]);
+
+  // Use LLM mode for selective retrieval
+  const chatEngine = index.asChatEngine({
+    mode: SummaryRetrieverMode.LLM,
+  });
+
+  const response = await chatEngine.chat({
+    message: "Provide a comprehensive summary of the main points",
+  });
+
+  console.log(response.message.content);
+}
+
+summarizeDocument().catch(console.error);
+```
+
+### Shared Storage with VectorStoreIndex
+
+`SummaryIndex` and `VectorStoreIndex` can share the same storage context:
+
+```typescript
+import { 
+  SummaryIndex, 
+  VectorStoreIndex, 
+  storageContextFromDefaults,
+} from "llamaindex";
+
+const storageContext = await storageContextFromDefaults({
+  persistDir: "./storage",
+});
+
+// Create both indices with same storage
+const vectorIndex = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext,
+});
+
+const summaryIndex = await SummaryIndex.fromDocuments(documents, {
+  storageContext,
+});
+
+// Use vector index for specific queries
+const specificAnswer = await vectorIndex.asQueryEngine().query({
+  query: "What is the capital of France?",
+});
+
+// Use summary index for summarization
+const summary = await summaryIndex.asQueryEngine().query({
+  query: "Summarize all the content",
+});
+```
+
+### Inserting and Deleting Nodes
+
+```typescript
+import { Document, SummaryIndex } from "llamaindex";
+
+const index = await SummaryIndex.fromDocuments([]);
+
+// Insert new document
+const doc1 = new Document({ 
+  text: "First document",
+  id_: "doc-1",
+});
+await index.insert(doc1);
+
+// Insert multiple nodes
+const nodes = await Settings.nodeParser.getNodesFromDocuments([
+  new Document({ text: "Document 2" }),
+  new Document({ text: "Document 3" }),
+]);
+await index.insertNodes(nodes);
+
+// Delete document by reference ID
+await index.deleteRefDoc("doc-1");
+```
+
+### Custom LLM Retriever Configuration
+
+```typescript
+import { 
+  SummaryIndex,
+  SummaryIndexLLMRetriever,
+  defaultChoiceSelectPrompt,
+} from "llamaindex";
+
+const index = await SummaryIndex.fromDocuments(documents);
+
+// Create custom LLM retriever
+const retriever = new SummaryIndexLLMRetriever(
+  index,
+  defaultChoiceSelectPrompt, // Custom prompt
+  10, // Choice batch size
+);
+
+const nodes = await retriever.retrieve({ 
+  query: "Find information about AI" 
+});
+```
+
+## Complete Working Example
+
+```typescript
+import { 
+  Document, 
+  SummaryIndex, 
+  SummaryRetrieverMode,
+  Settings,
+} from "llamaindex";
+import { openai } from "@llamaindex/openai";
+
+Settings.llm = openai({ 
+  apiKey: process.env.OPENAI_API_KEY,
+  model: "gpt-4o",
+});
+
+async function main() {
+  // Create sample documents
+  const documents = [
+    new Document({ 
+      text: "LlamaIndex is a data framework for LLM applications. It provides tools for ingestion, indexing, and querying.",
+      metadata: { chapter: 1 },
+    }),
+    new Document({ 
+      text: "Vector stores enable efficient similarity search. They store embeddings and support fast retrieval.",
+      metadata: { chapter: 2 },
+    }),
+    new Document({ 
+      text: "RAG combines retrieval with generation. It retrieves relevant context then generates responses.",
+      metadata: { chapter: 3 },
+    }),
+  ];
+
+  // Build summary index
+  console.log("Building SummaryIndex...");
+  const index = await SummaryIndex.fromDocuments(documents);
+
+  // Test default retrieval (returns all nodes)
+  console.log("\n=== Default Retrieval ===");
+  const defaultRetriever = index.asRetriever({
+    mode: SummaryRetrieverMode.DEFAULT,
+  });
+  const allNodes = await defaultRetriever.retrieve({ query: "test" });
+  console.log(`Retrieved ${allNodes.length} nodes`);
+
+  // Test LLM retrieval (selective)
+  console.log("\n=== LLM Retrieval ===");
+  const llmRetriever = index.asRetriever({
+    mode: SummaryRetrieverMode.LLM,
+  });
+  const selectedNodes = await llmRetriever.retrieve({ 
+    query: "What is RAG?" 
+  });
+  console.log(`Retrieved ${selectedNodes.length} relevant nodes`);
+  selectedNodes.forEach((node, idx) => {
+    console.log(`${idx + 1}. Score: ${node.score} - ${node.node.getText().substring(0, 50)}...`);
+  });
+
+  // Create summary using chat engine
+  console.log("\n=== Summary Generation ===");
+  const chatEngine = index.asChatEngine({
+    mode: SummaryRetrieverMode.LLM,
+  });
+
+  const summary = await chatEngine.chat({
+    message: "Provide a brief summary of all the topics covered",
+  });
+  console.log(summary.message.content);
+
+  // Query engine for Q&A
+  console.log("\n=== Query Engine ===");
+  const queryEngine = index.asQueryEngine();
+  const response = await queryEngine.query({
+    query: "How does RAG work?",
+  });
+  console.log(response.toString());
+}
+
+main().catch(console.error);
+```
+
+## Performance Considerations
+
+**Default Mode**:
+- ✅ Fast - no LLM calls for retrieval
+- ❌ Sends all nodes to response synthesis (expensive for large datasets)
+- Best for: Small document sets (< 20 nodes)
+
+**LLM Mode**:
+- ✅ More efficient for large datasets
+- ✅ Better relevance through LLM selection  
+- ❌ Additional LLM calls for retrieval
+- Best for: Medium document sets where selective retrieval helps
+
+**When to Switch to VectorStoreIndex**:
+- Document count > 100
+- Need semantic similarity search
+- Want faster retrieval at scale
+
+## Related Resources
+
+- [VectorStoreIndex](/indices/vector-index) - For semantic search at scale
+- [Response Synthesizers](/advanced/response-synthesizers) - Different summarization strategies
+- [Chat Engines](/api/core/chat-engine) - Conversational interfaces

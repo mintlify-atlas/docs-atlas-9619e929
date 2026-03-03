@@ -1,0 +1,438 @@
+---
+title: VectorStoreIndex
+description: Creating, managing, and querying vector store indices for semantic search
+---
+
+The `VectorStoreIndex` is the most commonly used index in LlamaIndex.TS. It stores document nodes as vector embeddings for efficient semantic similarity search.
+
+## Creating Vector Indices
+
+### From Documents
+
+The simplest way to create an index:
+
+```typescript
+import { Document, VectorStoreIndex } from "llamaindex";
+
+const documents = [
+  new Document({ text: "LlamaIndex is a data framework for LLMs" }),
+  new Document({ text: "It helps build RAG applications" }),
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+```
+
+### From Nodes
+
+Create index from pre-processed nodes:
+
+```typescript
+import { Document, VectorStoreIndex, Settings } from "llamaindex";
+
+const documents = [
+  new Document({ text: "Long document text..." }),
+];
+
+// Parse documents into nodes
+const nodes = await Settings.nodeParser.getNodesFromDocuments(documents);
+
+// Create index from nodes
+const index = await VectorStoreIndex.init({ nodes });
+```
+
+### From Existing Vector Store
+
+Connect to an existing vector store:
+
+```typescript
+import { VectorStoreIndex } from "llamaindex";
+import { PineconeVectorStore } from "@llamaindex/pinecone";
+import { Pinecone } from "@pinecone-database/pinecone";
+
+const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
+const pineconeIndex = pinecone.Index("my-index");
+
+const vectorStore = new PineconeVectorStore({ pineconeIndex });
+
+const index = await VectorStoreIndex.fromVectorStore(vectorStore);
+```
+
+## Configuring Embeddings
+
+Specify the embedding model:
+
+```typescript
+import { OpenAIEmbedding } from "@llamaindex/openai";
+import { Settings, VectorStoreIndex } from "llamaindex";
+
+// Set global embedding model
+Settings.embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-large",
+});
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+```
+
+Or configure per vector store:
+
+```typescript
+import { storageContextFromDefaults } from "llamaindex";
+import { OpenAIEmbedding } from "@llamaindex/openai";
+
+const embedModel = new OpenAIEmbedding({ 
+  model: "text-embedding-3-small" 
+});
+
+const storageContext = await storageContextFromDefaults({
+  vectorStores: {
+    text: new SimpleVectorStore({ embedModel }),
+  },
+});
+
+const index = await VectorStoreIndex.fromDocuments(documents, { 
+  storageContext 
+});
+```
+
+## Inserting Documents
+
+### Adding Single Documents
+
+```typescript
+import { Document } from "llamaindex";
+
+// Create index
+const index = await VectorStoreIndex.fromDocuments([]);
+
+// Insert new document
+const newDoc = new Document({ text: "New information" });
+await index.insert(newDoc);
+```
+
+### Inserting Multiple Nodes
+
+```typescript
+import { Document, Settings } from "llamaindex";
+
+const documents = [
+  new Document({ text: "Document 1" }),
+  new Document({ text: "Document 2" }),
+];
+
+const nodes = await Settings.nodeParser.getNodesFromDocuments(documents);
+await index.insertNodes(nodes);
+```
+
+### With Progress Tracking
+
+```typescript
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  logProgress: true,
+  progressCallback: (current, total) => {
+    console.log(`Embedded ${current}/${total} nodes`);
+  },
+});
+```
+
+## Querying
+
+### Basic Query
+
+```typescript
+const queryEngine = index.asQueryEngine();
+
+const response = await queryEngine.query({
+  query: "What is LlamaIndex?",
+});
+
+console.log(response.toString());
+```
+
+### With Retrieved Sources
+
+```typescript
+import { MetadataMode } from "llamaindex";
+
+const { message, sourceNodes } = await queryEngine.query({
+  query: "What is RAG?",
+});
+
+console.log("Response:", message.content);
+
+if (sourceNodes) {
+  sourceNodes.forEach((source, idx) => {
+    console.log(`\nSource ${idx + 1}:`);
+    console.log(`Score: ${source.score?.toFixed(4)}`);
+    console.log(`Text: ${source.node.getContent(MetadataMode.NONE)}`);
+  });
+}
+```
+
+### Configure Similarity Top-K
+
+```typescript
+const queryEngine = index.asQueryEngine({
+  similarityTopK: 5, // Retrieve top 5 most similar nodes
+});
+
+const response = await queryEngine.query({
+  query: "Tell me about embeddings",
+});
+```
+
+### Using Retrievers
+
+```typescript
+const retriever = index.asRetriever({
+  similarityTopK: 10,
+});
+
+const nodes = await retriever.retrieve({ 
+  query: "vector databases" 
+});
+
+nodes.forEach((node) => {
+  console.log(`Score: ${node.score}`);
+  console.log(`Text: ${node.node.getText()}`);
+});
+```
+
+## Persistence
+
+### Save to Disk
+
+```typescript
+import { storageContextFromDefaults } from "llamaindex";
+
+const storageContext = await storageContextFromDefaults({
+  persistDir: "./storage",
+});
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext,
+});
+
+// Index is automatically persisted to ./storage
+```
+
+### Load from Disk
+
+```typescript
+import { storageContextFromDefaults, VectorStoreIndex } from "llamaindex";
+
+const storageContext = await storageContextFromDefaults({
+  persistDir: "./storage",
+});
+
+const index = await VectorStoreIndex.init({
+  storageContext,
+  nodes: [], // Empty nodes loads from storage
+});
+```
+
+### With External Vector Store
+
+```typescript
+import { PineconeVectorStore } from "@llamaindex/pinecone";
+import { Pinecone } from "@pinecone-database/pinecone";
+
+const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
+const pineconeIndex = pinecone.Index("my-index");
+
+const vectorStore = new PineconeVectorStore({ pineconeIndex });
+
+const storageContext = await storageContextFromDefaults({
+  vectorStores: { text: vectorStore },
+});
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext,
+});
+
+// Data persisted to Pinecone automatically
+```
+
+## Document Management
+
+### Delete Documents
+
+```typescript
+const document = new Document({ 
+  text: "Content to delete",
+  id_: "doc-123",
+});
+
+const index = await VectorStoreIndex.fromDocuments([document]);
+
+// Delete by reference document ID
+await index.deleteRefDoc("doc-123");
+```
+
+### Update Documents
+
+```typescript
+// Delete old version
+await index.deleteRefDoc(documentId);
+
+// Insert new version
+const updatedDoc = new Document({ 
+  text: "Updated content",
+  id_: documentId,
+});
+await index.insert(updatedDoc);
+```
+
+### Avoid Duplicates
+
+```typescript
+import { DocStoreStrategy } from "llamaindex";
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  docStoreStrategy: DocStoreStrategy.UPSERTS,
+});
+
+// Re-inserting same documents won't create duplicates
+await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: index.storageContext,
+  docStoreStrategy: DocStoreStrategy.UPSERTS,
+});
+```
+
+## Complete Working Example
+
+```typescript
+import fs from "node:fs/promises";
+import { 
+  Document, 
+  VectorStoreIndex, 
+  Settings,
+  MetadataMode,
+  storageContextFromDefaults,
+} from "llamaindex";
+import { openai, OpenAIEmbedding } from "@llamaindex/openai";
+
+// Configure LLM and embeddings
+Settings.llm = openai({ 
+  apiKey: process.env.OPENAI_API_KEY,
+  model: "gpt-4o",
+});
+Settings.embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-small",
+});
+
+async function main() {
+  // Load documents
+  const essay = await fs.readFile("essay.txt", "utf-8");
+  const document = new Document({ 
+    text: essay,
+    metadata: { source: "essay.txt" },
+  });
+
+  // Configure storage
+  const storageContext = await storageContextFromDefaults({
+    persistDir: "./storage",
+  });
+
+  // Create index with progress tracking
+  console.log("Building index...");
+  const index = await VectorStoreIndex.fromDocuments([document], {
+    storageContext,
+    logProgress: true,
+    progressCallback: (current, total) => {
+      console.log(`Progress: ${current}/${total}`);
+    },
+  });
+
+  // Query the index
+  const queryEngine = index.asQueryEngine({
+    similarityTopK: 3,
+  });
+
+  const { message, sourceNodes } = await queryEngine.query({
+    query: "What are the main topics discussed?",
+  });
+
+  // Display response
+  console.log("\n=== Response ===");
+  console.log(message.content);
+
+  // Display sources
+  if (sourceNodes) {
+    console.log("\n=== Sources ===");
+    sourceNodes.forEach((source, idx) => {
+      console.log(`\nSource ${idx + 1} (Score: ${source.score?.toFixed(4)}):`);
+      console.log(source.node.getContent(MetadataMode.NONE).substring(0, 200));
+    });
+  }
+
+  // Insert additional document
+  console.log("\nInserting additional document...");
+  const newDoc = new Document({ 
+    text: "Additional context about the essay topics",
+    metadata: { source: "supplementary" },
+  });
+  await index.insert(newDoc);
+
+  console.log("Done!");
+}
+
+main().catch(console.error);
+```
+
+## Advanced Features
+
+### Chat Engine
+
+Create a conversational interface:
+
+```typescript
+const chatEngine = index.asChatEngine({
+  similarityTopK: 3,
+});
+
+const response = await chatEngine.chat({
+  message: "What is LlamaIndex?",
+});
+
+console.log(response.message.content);
+
+// Follow-up question with memory
+const followUp = await chatEngine.chat({
+  message: "How does it work?",
+});
+```
+
+### Custom Retriever
+
+```typescript
+import { MetadataFilters } from "llamaindex";
+
+const customRetriever = index.asRetriever({
+  similarityTopK: 5,
+  filters: {
+    filters: [{ key: "category", value: "technical", operator: "==" }],
+  },
+});
+
+const queryEngine = index.asQueryEngine({
+  retriever: customRetriever,
+});
+```
+
+### Response Synthesizer
+
+```typescript
+import { getResponseSynthesizer } from "@llamaindex/core/response-synthesizers";
+
+const responseSynthesizer = getResponseSynthesizer("tree_summarize");
+
+const queryEngine = index.asQueryEngine({
+  responseSynthesizer,
+});
+```
+
+## Related Resources
+
+- [Vector Store Retrievers](/retrievers/vector-store) - Retrieval configuration
+- [SummaryIndex](/indices/summary-index) - Alternative index type
+- [Vector Stores](/indices/vector-index) - Vector store options

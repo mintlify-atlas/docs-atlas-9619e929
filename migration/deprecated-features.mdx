@@ -1,0 +1,301 @@
+---
+title: "Deprecated Features"
+description: "List of deprecated APIs and their recommended replacements"
+---
+
+This page tracks deprecated features in LlamaIndex.TS and provides migration guidance.
+
+## Currently Deprecated
+
+### Agents (ReAct & Function Calling)
+
+<Warning>
+**Deprecated in:** v0.11.0  
+**Status:** Showing deprecation warnings  
+**Removal Timeline:** To be determined
+</Warning>
+
+**Deprecated APIs:**
+- `llamaindex/agent`
+- `ReActAgent`
+- `OpenAIAgent`
+- Legacy agent implementations in `@llamaindex/core/agent`
+
+**Replacement:**
+
+Use the new `@llamaindex/workflow` package for building agentic workflows.
+
+**Before:**
+```typescript
+import { ReActAgent } from "llamaindex/agent";
+import { OpenAI } from "@llamaindex/openai";
+
+const agent = new ReActAgent({
+  llm: new OpenAI({ model: "gpt-4" }),
+  tools: [myTool],
+});
+
+const response = await agent.chat({ message: "Hello" });
+```
+
+**After:**
+```typescript
+import { AgentWorkflow } from "@llamaindex/workflow";
+import { OpenAI } from "@llamaindex/openai";
+
+const workflow = new AgentWorkflow({
+  llm: new OpenAI({ model: "gpt-4" }),
+  tools: [myTool],
+});
+
+const response = await workflow.run({ message: "Hello" });
+```
+
+**Why the change:**
+- More flexible workflow orchestration
+- Better state management
+- Improved error handling
+- Support for complex multi-agent systems
+
+### ServiceContext
+
+<Warning>
+**Deprecated in:** v0.8.0  
+**Removed in:** v0.9.0  
+**Status:** Completely removed
+</Warning>
+
+**Deprecated APIs:**
+- `ServiceContext`
+- `serviceContextFromDefaults()`
+- All ServiceContext-related methods
+
+**Replacement:**
+
+Use the `Settings` global configuration object.
+
+**Before:**
+```typescript
+import { serviceContextFromDefaults } from "llamaindex";
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+
+const serviceContext = serviceContextFromDefaults({
+  llm: new OpenAI({ model: "gpt-4" }),
+  embedModel: new OpenAIEmbedding(),
+  chunkSize: 512,
+});
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  serviceContext,
+});
+```
+
+**After:**
+```typescript
+import { Settings, VectorStoreIndex } from "llamaindex";
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+
+Settings.llm = new OpenAI({ model: "gpt-4" });
+Settings.embedModel = new OpenAIEmbedding();
+Settings.chunkSize = 512;
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+```
+
+**Why the change:**
+- Simpler, more intuitive API
+- Reduced boilerplate code
+- Better alignment with modern patterns
+
+## Planned Deprecations
+
+### Legacy Workflows
+
+<Info>
+**Deprecation Notice:** The old workflow system in the main package will be removed in a future version.
+</Info>
+
+**Migration Path:**
+
+Migrate to `@llamaindex/workflow` package:
+
+```bash
+npm install @llamaindex/workflow
+```
+
+```typescript
+import { Workflow, StartEvent, StopEvent } from "@llamaindex/workflow";
+
+class MyWorkflow extends Workflow {
+  async run(ctx: Context, ev: StartEvent) {
+    // Your workflow logic
+    return new StopEvent({ result: "done" });
+  }
+}
+```
+
+### Old Readers in Main Package
+
+<Info>
+**Status:** Readers are being migrated to separate packages for better modularity.
+</Info>
+
+**Current Approach:**
+```typescript
+import { PDFReader } from "llamaindex/readers/PDFReader";
+```
+
+**Recommended Approach:**
+```bash
+npm install @llamaindex/readers
+```
+
+```typescript
+import { PDFReader } from "@llamaindex/readers/pdf";
+```
+
+## Removed Features
+
+### Provider Re-exports (Removed in 0.9.0)
+
+**What was removed:**
+```typescript
+// These no longer work
+import { OpenAI, Anthropic, Pinecone } from "llamaindex";
+```
+
+**How to update:**
+```typescript
+import { OpenAI } from "@llamaindex/openai";
+import { Anthropic } from "@llamaindex/anthropic";
+import { PineconeVectorStore } from "@llamaindex/pinecone";
+```
+
+### gpt-tokenizer in Main Package (Removed in 0.9.16)
+
+**What changed:**
+
+The `gpt-tokenizer` dependency is now optional to reduce package size.
+
+**Impact:**
+
+If you need tokenization utilities, install separately:
+
+```bash
+npm install gpt-tokenizer
+```
+
+### Cloud Package Export (Removed in 0.12.0)
+
+**What was removed:**
+```typescript
+import { LlamaCloudIndex } from "llamaindex";
+```
+
+**How to update:**
+```bash
+npm install @llamaindex/cloud
+```
+
+```typescript
+import { LlamaCloudIndex } from "@llamaindex/cloud";
+```
+
+## API Naming Changes
+
+These aren't deprecations but important naming changes to be aware of:
+
+### Embed Model
+
+**Old:** `embedModel` (still works)  
+**Preferred:** `embedModel` (no change needed)
+
+### Chat vs Query
+
+**Before (some older examples):**
+```typescript
+engine.query(message); // Inconsistent usage
+```
+
+**Current (standardized):**
+```typescript
+queryEngine.query({ query: "..." });
+chatEngine.chat({ message: "..." });
+```
+
+## Best Practices for Handling Deprecations
+
+### 1. Monitor Console Warnings
+
+Deprecated features will show warnings in development:
+
+```typescript
+// Enable verbose logging to see deprecation warnings
+Settings.debug = true;
+```
+
+### 2. Check Your Dependencies
+
+Regularly audit your imports:
+
+```bash
+# Check for deprecated imports
+grep -r "from 'llamaindex/agent'" .
+grep -r "ServiceContext" .
+```
+
+### 3. Update Incrementally
+
+Don't wait until removal:
+
+```typescript
+// ✗ Bad: Ignoring deprecation warnings
+import { ReActAgent } from "llamaindex/agent"; // Shows warning
+
+// ✓ Good: Update when you see the warning
+import { AgentWorkflow } from "@llamaindex/workflow";
+```
+
+### 4. Read the Changelog
+
+Before upgrading, review the [CHANGELOG.md](https://github.com/run-llama/LlamaIndexTS/blob/main/packages/llamaindex/CHANGELOG.md).
+
+### 5. Test After Migration
+
+Always test your application after updating deprecated APIs:
+
+```bash
+npm test
+npm run build
+```
+
+## Getting Help with Deprecated Features
+
+If you need help migrating from deprecated features:
+
+<CardGroup cols={2}>
+  <Card title="Discord Community" icon="discord" href="https://discord.com/invite/eN6D2HQ4aX">
+    Ask questions in our Discord server
+  </Card>
+  <Card title="GitHub Discussions" icon="github" href="https://github.com/run-llama/LlamaIndexTS/discussions">
+    Search for or start a discussion
+  </Card>
+  <Card title="Version Upgrades" icon="arrow-up" href="/migration/version-upgrades">
+    See version-specific migration guides
+  </Card>
+  <Card title="Troubleshooting" icon="wrench" href="/resources/troubleshooting">
+    Common migration issues and solutions
+  </Card>
+</CardGroup>
+
+## Deprecation Policy
+
+LlamaIndex.TS follows semantic versioning:
+
+- **Deprecation warnings:** Added in minor versions (e.g., 0.11.0)
+- **Removal:** Occurs in major versions (e.g., 1.0.0) or specified minor versions
+- **Notice period:** At least one minor version before removal
+
+<Info>
+We aim to provide clear migration paths and adequate notice for all deprecations.
+</Info>

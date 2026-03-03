@@ -1,0 +1,494 @@
+---
+title: "Troubleshooting"
+description: "Common issues and solutions for LlamaIndex.TS"
+---
+
+This guide covers common issues you might encounter when using LlamaIndex.TS and how to resolve them.
+
+## Installation Issues
+
+<AccordionGroup>
+  <Accordion title="Module not found errors after installation">
+    **Problem:**
+    ```bash
+    Error: Cannot find module 'llamaindex'
+    ```
+
+    **Solutions:**
+
+    1. Verify installation:
+    ```bash
+    npm list llamaindex
+    ```
+
+    2. Reinstall dependencies:
+    ```bash
+    rm -rf node_modules package-lock.json
+    npm install
+    ```
+
+    3. Check your Node.js version:
+    ```bash
+    node -v  # Should be >= 18.0.0
+    ```
+
+    4. For TypeScript projects, ensure `moduleResolution` is set correctly:
+    ```json
+    {
+      "compilerOptions": {
+        "moduleResolution": "bundler"
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Peer dependency warnings">
+    **Problem:**
+    ```bash
+    npm WARN ERESOLVE overriding peer dependency
+    ```
+
+    **Solutions:**
+
+    1. For npm v7+, peer dependencies are installed automatically. You can ignore warnings if your app works.
+
+    2. Install missing peer dependencies manually:
+    ```bash
+    npm install openai  # If using @llamaindex/openai
+    npm install @pinecone-database/pinecone  # If using @llamaindex/pinecone
+    ```
+
+    3. Use `--legacy-peer-deps` if necessary:
+    ```bash
+    npm install --legacy-peer-deps
+    ```
+  </Accordion>
+
+  <Accordion title="pnpm installation issues">
+    **Problem:**
+    ```bash
+    ERR_PNPM_PEER_DEP_ISSUES
+    ```
+
+    **Solutions:**
+
+    1. Use the recommended pnpm version:
+    ```bash
+    npm install -g pnpm@10.8.1
+    ```
+
+    2. Configure pnpm to handle peer dependencies:
+    ```bash
+    pnpm config set auto-install-peers true
+    ```
+
+    3. Install with:
+    ```bash
+    pnpm install --shamefully-hoist
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Runtime Errors
+
+<AccordionGroup>
+  <Accordion title="OpenAI API errors (401, 429, 500)">
+    **Problem:**
+    ```
+    OpenAI API error: 401 Unauthorized
+    OpenAI API error: 429 Rate limit exceeded
+    OpenAI API error: 500 Internal server error
+    ```
+
+    **Solutions:**
+
+    **401 Unauthorized:**
+    ```typescript
+    import { Settings } from "llamaindex";
+    import { OpenAI } from "@llamaindex/openai";
+
+    // Make sure API key is set
+    Settings.llm = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+    ```
+
+    **429 Rate Limit:**
+    ```typescript
+    Settings.llm = new OpenAI({
+      maxRetries: 3,
+      timeout: 60000,
+    });
+    ```
+
+    **500 Server Error:**
+    - Retry the request
+    - Check OpenAI status page
+    - Implement exponential backoff
+  </Accordion>
+
+  <Accordion title="TypeError: Cannot read property 'embedModel' of undefined">
+    **Problem:**
+    ```
+    TypeError: Cannot read property 'embedModel' of undefined
+    ```
+
+    **Solution:**
+
+    Set the embedModel before using it:
+    ```typescript
+    import { Settings } from "llamaindex";
+    import { OpenAIEmbedding } from "@llamaindex/openai";
+
+    // Set embedModel before creating index
+    Settings.embedModel = new OpenAIEmbedding();
+
+    const index = await VectorStoreIndex.fromDocuments(documents);
+    ```
+  </Accordion>
+
+  <Accordion title="Memory issues with large documents">
+    **Problem:**
+    ```
+    JavaScript heap out of memory
+    FATAL ERROR: Reached heap limit
+    ```
+
+    **Solutions:**
+
+    1. Increase Node.js memory limit:
+    ```bash
+    node --max-old-space-size=4096 your-script.js
+    ```
+
+    2. Process documents in batches:
+    ```typescript
+    const batchSize = 10;
+    for (let i = 0; i < documents.length; i += batchSize) {
+      const batch = documents.slice(i, i + batchSize);
+      await index.insert(batch);
+    }
+    ```
+
+    3. Use streaming for large files:
+    ```typescript
+    import { SimpleDirectoryReader } from "llamaindex";
+
+    const reader = new SimpleDirectoryReader();
+    // Process files one at a time
+    for await (const doc of reader.loadDataAsyncIterator({ directoryPath: "./data" })) {
+      await index.insert(doc);
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="AsyncLocalStorage errors in Edge runtime">
+    **Problem:**
+    ```
+    Error: AsyncLocalStorage is not available in this environment
+    ```
+
+    **Solution:**
+
+    Use the edge-compatible entry point:
+    ```typescript
+    // For Vercel Edge Runtime
+    import { VectorStoreIndex } from "llamaindex/edge";
+
+    // Or configure your bundler
+    // next.config.js
+    module.exports = {
+      experimental: {
+        serverComponentsExternalPackages: ["llamaindex"],
+      },
+    };
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Configuration Problems
+
+<AccordionGroup>
+  <Accordion title="Environment variables not loading">
+    **Problem:**
+    ```
+    API key is undefined
+    ```
+
+    **Solutions:**
+
+    1. Install and configure dotenv:
+    ```bash
+    npm install dotenv
+    ```
+
+    ```typescript
+    import "dotenv/config";
+    import { OpenAI } from "@llamaindex/openai";
+
+    const llm = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    ```
+
+    2. For Next.js, use `.env.local`:
+    ```bash
+    # .env.local
+    OPENAI_API_KEY=sk-...
+    ```
+
+    3. Verify the environment variable is set:
+    ```typescript
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("OPENAI_API_KEY is not set");
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Vector store connection failures">
+    **Problem:**
+    ```
+    Failed to connect to Pinecone
+    Qdrant connection timeout
+    ```
+
+    **Solutions:**
+
+    1. Verify credentials:
+    ```typescript
+    import { PineconeVectorStore } from "@llamaindex/pinecone";
+
+    const vectorStore = new PineconeVectorStore({
+      indexName: "my-index",
+      apiKey: process.env.PINECONE_API_KEY,
+      environment: process.env.PINECONE_ENVIRONMENT,
+    });
+    ```
+
+    2. Check network connectivity:
+    ```bash
+    curl https://api.pinecone.io/
+    ```
+
+    3. Increase timeout:
+    ```typescript
+    const vectorStore = new PineconeVectorStore({
+      indexName: "my-index",
+      timeout: 60000, // 60 seconds
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Chunk size and overlap configuration">
+    **Problem:**
+    ```
+    Documents are not being split correctly
+    Chunks are too large/small
+    ```
+
+    **Solution:**
+
+    Configure the node parser:
+    ```typescript
+    import { Settings } from "llamaindex";
+    import { SentenceSplitter } from "llamaindex";
+
+    Settings.nodeParser = new SentenceSplitter({
+      chunkSize: 1024,        // Adjust based on your needs
+      chunkOverlap: 200,      // 20% overlap is common
+    });
+
+    const index = await VectorStoreIndex.fromDocuments(documents);
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Build and Bundling Issues
+
+<AccordionGroup>
+  <Accordion title="Next.js bundling errors">
+    **Problem:**
+    ```
+    Module not found: Can't resolve 'fs'
+    Module not found: Can't resolve 'async_hooks'
+    ```
+
+    **Solution:**
+
+    Configure Next.js to handle LlamaIndex properly:
+    ```javascript
+    // next.config.js
+    module.exports = {
+      experimental: {
+        serverComponentsExternalPackages: [
+          "llamaindex",
+          "@llamaindex/core",
+          "@llamaindex/openai",
+        ],
+      },
+      webpack: (config, { isServer }) => {
+        if (!isServer) {
+          config.resolve.fallback = {
+            ...config.resolve.fallback,
+            fs: false,
+            net: false,
+            tls: false,
+          };
+        }
+        return config;
+      },
+    };
+    ```
+  </Accordion>
+
+  <Accordion title="Vite/Rollup bundling issues">
+    **Problem:**
+    ```
+    Failed to resolve import "fs"
+    ```
+
+    **Solution:**
+
+    Configure Vite:
+    ```javascript
+    // vite.config.js
+    import { defineConfig } from "vite";
+
+    export default defineConfig({
+      resolve: {
+        alias: {
+          fs: false,
+          path: false,
+        },
+      },
+      optimizeDeps: {
+        exclude: ["llamaindex"],
+      },
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="TypeScript errors">
+    **Problem:**
+    ```
+    TS2307: Cannot find module 'llamaindex'
+    TS7016: Could not find a declaration file
+    ```
+
+    **Solutions:**
+
+    1. Ensure TypeScript configuration:
+    ```json
+    {
+      "compilerOptions": {
+        "moduleResolution": "bundler",
+        "module": "ESNext",
+        "target": "ES2020",
+        "lib": ["ES2020"],
+        "skipLibCheck": true
+      }
+    }
+    ```
+
+    2. Reinstall with types:
+    ```bash
+    npm install --save-dev @types/node
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Performance Issues
+
+<AccordionGroup>
+  <Accordion title="Slow embedding generation">
+    **Problem:**
+    Embedding generation takes too long.
+
+    **Solutions:**
+
+    1. Use batch embedding:
+    ```typescript
+    import { OpenAIEmbedding } from "@llamaindex/openai";
+
+    const embedModel = new OpenAIEmbedding({
+      batchSize: 100, // Process multiple texts at once
+    });
+    ```
+
+    2. Use a faster model:
+    ```typescript
+    Settings.embedModel = new OpenAIEmbedding({
+      model: "text-embedding-3-small", // Faster than text-embedding-3-large
+    });
+    ```
+
+    3. Cache embeddings:
+    ```typescript
+    // Store embeddings in a vector store for reuse
+    const vectorStore = new QdrantVectorStore({
+      url: process.env.QDRANT_URL,
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="High API costs">
+    **Problem:**
+    OpenAI API costs are too high.
+
+    **Solutions:**
+
+    1. Use smaller models:
+    ```typescript
+    Settings.llm = new OpenAI({ model: "gpt-3.5-turbo" });
+    Settings.embedModel = new OpenAIEmbedding({ model: "text-embedding-3-small" });
+    ```
+
+    2. Reduce chunk size to minimize embeddings:
+    ```typescript
+    Settings.chunkSize = 512; // Smaller chunks = fewer tokens
+    ```
+
+    3. Use local models:
+    ```typescript
+    import { Ollama } from "@llamaindex/ollama";
+
+    Settings.llm = new Ollama({ model: "llama3" });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Getting More Help
+
+If your issue isn't covered here:
+
+<CardGroup cols={2}>
+  <Card title="Discord Community" icon="discord" href="https://discord.com/invite/eN6D2HQ4aX">
+    Get real-time help from the community
+  </Card>
+  <Card title="GitHub Issues" icon="github" href="https://github.com/run-llama/LlamaIndexTS/issues">
+    Report bugs or request features
+  </Card>
+  <Card title="GitHub Discussions" icon="comments" href="https://github.com/run-llama/LlamaIndexTS/discussions">
+    Ask questions and share solutions
+  </Card>
+  <Card title="FAQ" icon="circle-question" href="/resources/faq">
+    Frequently asked questions
+  </Card>
+</CardGroup>
+
+## Debug Mode
+
+Enable debug logging to troubleshoot issues:
+
+```typescript
+import { Settings } from "llamaindex";
+
+// Enable verbose logging
+Settings.debug = true;
+
+// Your code here
+```
+
+This will show detailed logs about:
+- API calls
+- Document processing
+- Embedding generation
+- Query execution

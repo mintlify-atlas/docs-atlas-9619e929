@@ -1,0 +1,221 @@
+---
+title: "Weaviate"
+description: "Weaviate vector database integration"
+icon: "database"
+---
+
+## Overview
+
+Weaviate is an open-source vector database with built-in vectorization, hybrid search, and GraphQL API support.
+
+## Installation
+
+```bash
+npm install @llamaindex/weaviate weaviate-ts-client
+```
+
+## Basic Usage
+
+```typescript
+import { WeaviateVectorStore } from "@llamaindex/weaviate";
+import { VectorStoreIndex, Document } from "llamaindex";
+
+const vectorStore = new WeaviateVectorStore({
+  url: "http://localhost:8080",
+  className: "MyDocuments"
+});
+
+const documents = [
+  new Document({ text: "LlamaIndex is a data framework." }),
+  new Document({ text: "Weaviate is a vector database." })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+const queryEngine = index.asQueryEngine();
+const response = await queryEngine.query({
+  query: "What is Weaviate?"
+});
+```
+
+## Constructor Options
+
+<ParamField path="url" type="string" default="http://localhost:8080">
+  Weaviate server URL
+</ParamField>
+
+<ParamField path="className" type="string" required>
+  Name of the Weaviate class (collection)
+</ParamField>
+
+<ParamField path="apiKey" type="string">
+  API key for Weaviate Cloud
+</ParamField>
+
+## Running Weaviate
+
+### Docker
+
+```bash
+docker run -p 8080:8080 \
+  -e AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true \
+  -e PERSISTENCE_DATA_PATH=/var/lib/weaviate \
+  semitechnologies/weaviate:latest
+```
+
+### Weaviate Cloud
+
+Sign up at [Weaviate Cloud](https://console.weaviate.cloud) and use the provided URL:
+
+```typescript
+const vectorStore = new WeaviateVectorStore({
+  url: "https://my-cluster.weaviate.network",
+  apiKey: process.env.WEAVIATE_API_KEY,
+  className: "MyDocuments"
+});
+```
+
+## Schema Configuration
+
+```typescript
+import weaviate from "weaviate-ts-client";
+
+const client = weaviate.client({
+  scheme: "http",
+  host: "localhost:8080"
+});
+
+await client.schema
+  .classCreator()
+  .withClass({
+    class: "MyDocuments",
+    vectorizer: "none",  // Use external embeddings
+    properties: [
+      {
+        name: "text",
+        dataType: ["text"]
+      },
+      {
+        name: "metadata",
+        dataType: ["object"]
+      }
+    ]
+  })
+  .do();
+```
+
+## Querying
+
+### Basic Query
+
+```typescript
+const index = await VectorStoreIndex.fromVectorStore(vectorStore);
+
+const retriever = index.asRetriever({
+  similarityTopK: 5
+});
+
+const nodes = await retriever.retrieve("query text");
+```
+
+### Metadata Filtering
+
+```typescript
+const documents = [
+  new Document({
+    text: "Doc 1",
+    metadata: { category: "tech", year: 2023 }
+  })
+];
+
+const retriever = index.asRetriever({
+  filters: {
+    where: {
+      path: ["category"],
+      operator: "Equal",
+      valueString: "tech"
+    }
+  }
+});
+```
+
+## Hybrid Search
+
+Combine vector and keyword search:
+
+```typescript
+const results = await client.graphql
+  .get()
+  .withClassName("MyDocuments")
+  .withHybrid({
+    query: "search query",
+    alpha: 0.7  // 0 = keyword, 1 = vector
+  })
+  .withFields("text")
+  .withLimit(5)
+  .do();
+```
+
+## Complete Example
+
+```typescript
+import { WeaviateVectorStore } from "@llamaindex/weaviate";
+import { VectorStoreIndex, Document, Settings } from "llamaindex";
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+import weaviate from "weaviate-ts-client";
+
+// Configure settings
+Settings.llm = new OpenAI({ model: "gpt-4" });
+Settings.embedModel = new OpenAIEmbedding();
+
+// Create schema
+const client = weaviate.client({
+  scheme: "http",
+  host: "localhost:8080"
+});
+
+await client.schema
+  .classCreator()
+  .withClass({
+    class: "Documents",
+    vectorizer: "none"
+  })
+  .do();
+
+// Create vector store
+const vectorStore = new WeaviateVectorStore({
+  url: "http://localhost:8080",
+  className: "Documents"
+});
+
+// Build index
+const documents = [
+  new Document({ text: "LlamaIndex documentation..." })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+// Query
+const queryEngine = index.asQueryEngine();
+const response = await queryEngine.query({
+  query: "What is LlamaIndex?"
+});
+```
+
+## Best Practices
+
+1. **Use Weaviate Cloud for production**: Managed solution
+2. **Enable persistence**: Configure data persistence in Docker
+3. **Leverage hybrid search**: Combine vector and keyword search
+4. **Define proper schema**: Plan properties and data types
+5. **Use GraphQL for complex queries**: Direct access to Weaviate's API
+
+## See Also
+
+- [Weaviate Documentation](https://weaviate.io/developers/weaviate)
+- [Weaviate Cloud](https://console.weaviate.cloud)
+- [Vector Store Index](/api/llamaindex/indices)

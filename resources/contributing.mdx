@@ -1,0 +1,438 @@
+---
+title: "Contributing Guide"
+description: "How to contribute to LlamaIndex.TS"
+---
+
+Thank you for your interest in contributing to LlamaIndex.TS! We welcome contributions from everyone, whether you're fixing a bug, adding a feature, or improving documentation.
+
+## Getting Started
+
+### Prerequisites
+
+Before you begin, make sure you have:
+
+- **Node.js LTS** (Long-term Support) installed
+- **pnpm** package manager
+- **Git** for version control
+- Basic understanding of TypeScript and Node.js
+
+**Check your versions:**
+```bash
+node -v   # Should be v20.x or v22.x
+pnpm -v   # Latest version recommended
+```
+
+### Install pnpm
+
+If you don't have pnpm installed:
+
+```bash
+npm install -g pnpm
+```
+
+### Fork and Clone
+
+1. Fork the repository on GitHub
+2. Clone your fork:
+
+```bash
+git clone https://github.com/YOUR_USERNAME/LlamaIndexTS.git
+cd LlamaIndexTS
+```
+
+3. Add upstream remote:
+
+```bash
+git remote add upstream https://github.com/run-llama/LlamaIndexTS.git
+```
+
+## Project Structure
+
+LlamaIndex.TS uses a **pnpm monorepo** structure:
+
+```
+LlamaIndexTS/
+├── packages/
+│   ├── llamaindex/          # Main package
+│   ├── core/                # Core abstractions and interfaces
+│   ├── env/                 # Environment-specific compatibility
+│   ├── providers/           # Provider packages (LLMs, vector stores)
+│   │   ├── openai/
+│   │   ├── anthropic/
+│   │   ├── storage/pinecone/
+│   │   └── ...
+│   ├── workflow/            # Workflow and agent orchestration
+│   ├── tools/               # Function calling tools
+│   └── readers/             # File format readers
+├── examples/                # Usage examples
+├── e2e/                     # End-to-end tests
+└── apps/
+    └── next/                # Documentation website
+```
+
+### Key Directories
+
+- **`packages/llamaindex`**: The main package that aggregates core functionality
+- **`packages/core`**: Abstract base classes and interfaces for runtime-agnostic code
+- **`packages/env`**: Runtime compatibility layers for different JS environments
+- **`packages/providers/*`**: Separate packages for LLMs, embeddings, vector stores, etc.
+
+## Development Setup
+
+### 1. Install Dependencies
+
+```bash
+pnpm install
+pnpm install -g tsx  # For running TypeScript files
+```
+
+### 2. Build Packages
+
+```bash
+pnpm build
+```
+
+This builds all packages using Turbo for efficient parallel builds.
+
+### 3. Start Development Mode
+
+```bash
+pnpm dev
+```
+
+This runs all packages in watch mode, automatically rebuilding on changes.
+
+**To watch specific packages:**
+
+```bash
+pnpm turbo run dev --filter="./packages/core" --concurrency=100
+```
+
+## Making Changes
+
+### 1. Create a Branch
+
+```bash
+git checkout -b feature/your-feature-name
+# or
+git checkout -b fix/bug-description
+```
+
+### 2. Make Your Changes
+
+Edit the relevant files in the appropriate package.
+
+**Quick testing:**
+
+Create a test script to verify your changes:
+
+```typescript
+// test-script.ts
+import { VectorStoreIndex } from "llamaindex";
+import { OpenAI } from "@llamaindex/openai";
+
+// Your test code here
+```
+
+Run it with:
+
+```bash
+pnpm exec tsx test-script.ts
+```
+
+### 3. Add Tests
+
+All new features and bug fixes should include tests.
+
+**Unit tests** are located in each package's `tests/` folder:
+
+```typescript
+// packages/core/tests/my-feature.test.ts
+import { describe, it, expect } from "vitest";
+
+describe("MyFeature", () => {
+  it("should work correctly", () => {
+    expect(true).toBe(true);
+  });
+});
+```
+
+**Run tests:**
+
+```bash
+pnpm test
+```
+
+**Run tests for a specific package:**
+
+```bash
+turbo run test --filter="@llamaindex/core"
+```
+
+### 4. Run Linting
+
+```bash
+pnpm lint
+```
+
+**Auto-fix issues:**
+
+```bash
+pnpm format:write
+```
+
+### 5. Type Check
+
+```bash
+pnpm type-check
+```
+
+## Adding a New Package
+
+### When to Create a New Package
+
+- Adding a new LLM provider (e.g., `@llamaindex/mistral`)
+- Adding a new vector store (e.g., `@llamaindex/storage/milvus`)
+- Adding a new reader or tool
+
+### Steps
+
+1. **Create the package** in `packages/providers/`:
+
+```bash
+mkdir -p packages/providers/my-provider
+```
+
+2. **Use existing `package.json` as a template:**
+
+```json
+{
+  "name": "@llamaindex/my-provider",
+  "version": "0.0.1",
+  "type": "module",
+  "dependencies": {
+    "@llamaindex/core": "workspace:*"
+  },
+  "scripts": {
+    "build": "bunchee",
+    "dev": "bunchee --watch"
+  }
+}
+```
+
+3. **Reference in root `tsconfig.json`:**
+
+```json
+{
+  "references": [
+    { "path": "./packages/providers/my-provider" }
+  ]
+}
+```
+
+4. **Add to examples** if applicable:
+
+```json
+// examples/package.json
+{
+  "dependencies": {
+    "@llamaindex/my-provider": "workspace:*"
+  }
+}
+```
+
+## Submitting a Pull Request
+
+### Before Submitting
+
+1. **All tests pass:**
+
+```bash
+pnpm build
+pnpm test
+pnpm lint
+pnpm type-check
+```
+
+2. **Create a changeset** for version bumping:
+
+```bash
+pnpm changeset
+```
+
+You'll be prompted to:
+- Select which packages changed
+- Choose bump type (major, minor, patch)
+- Write a description of the changes
+
+### Submit Your PR
+
+1. **Push your branch:**
+
+```bash
+git push origin feature/your-feature-name
+```
+
+2. **Open a Pull Request** on GitHub with:
+   - Clear title describing the change
+   - Description of what changed and why
+   - Reference any related issues
+   - Screenshots/examples if applicable
+
+3. **Address review feedback:**
+   - Make requested changes
+   - Push additional commits
+   - Re-request review when ready
+
+### PR Checklist
+
+- [ ] Tests added/updated and passing
+- [ ] Documentation updated (if needed)
+- [ ] Examples added/updated (for new features)
+- [ ] Changeset created
+- [ ] Code follows existing style
+- [ ] No breaking changes (or clearly documented)
+
+## Documentation
+
+If your changes affect user-facing APIs:
+
+1. **Update the docs** in `apps/next/` folder
+2. **Add examples** in the `examples/` folder
+3. **Update README** if adding a new package
+
+## Code Style
+
+### Formatting
+
+We use **Prettier** for formatting. It runs automatically on commit via Husky.
+
+**Manual formatting:**
+
+```bash
+pnpm format:write
+```
+
+### Linting
+
+We use **ESLint**. Configuration is in `eslint.config.js`.
+
+```bash
+pnpm lint
+```
+
+### TypeScript
+
+- Use **strict mode**
+- Prefer **interfaces** over types for public APIs
+- Add **JSDoc comments** for public APIs
+- Use **async/await** instead of promises
+
+**Example:**
+
+```typescript
+/**
+ * Creates a vector store index from documents.
+ *
+ * @param documents - Array of documents to index
+ * @param options - Optional configuration
+ * @returns The created vector store index
+ */
+export async function createIndex(
+  documents: Document[],
+  options?: IndexOptions,
+): Promise<VectorStoreIndex> {
+  // Implementation
+}
+```
+
+## Testing
+
+### Unit Tests
+
+Use **Vitest** for unit tests:
+
+```typescript
+import { describe, it, expect } from "vitest";
+
+describe("MyComponent", () => {
+  it("should handle edge cases", () => {
+    // Test implementation
+  });
+});
+```
+
+### E2E Tests
+
+End-to-end tests are in the `e2e/` folder and test runtime compatibility:
+
+```bash
+pnpm e2e
+```
+
+### Running Tests
+
+```bash
+# All tests
+pnpm test
+
+# Specific package
+turbo run test --filter="@llamaindex/core"
+
+# Watch mode
+pnpm test --watch
+```
+
+## Common Tasks
+
+### Check for Circular Dependencies
+
+```bash
+pnpm circular-check
+```
+
+### Clean Build Artifacts
+
+```bash
+pnpm clean
+```
+
+### Update Dependencies
+
+```bash
+pnpm update --latest
+```
+
+## Release Process (Maintainers)
+
+We use **Changesets** for versioning and releases:
+
+1. PRs are merged with changesets
+2. Release PR is auto-generated
+3. Merging release PR publishes to npm
+
+**Manual release (maintainers only):**
+
+```bash
+pnpm release
+```
+
+## Getting Help
+
+If you need help contributing:
+
+- **Discord:** [Join our Discord](https://discord.com/invite/eN6D2HQ4aX)
+- **GitHub Discussions:** [Ask a question](https://github.com/run-llama/LlamaIndexTS/discussions)
+- **Issues:** [Open an issue](https://github.com/run-llama/LlamaIndexTS/issues)
+
+## Code of Conduct
+
+Please be respectful and inclusive. We're building a welcoming community for everyone.
+
+## Thank You!
+
+Your contributions make LlamaIndex.TS better for everyone. We appreciate your time and effort!
+
+<Card title="Community" icon="users" href="/resources/community">
+  Join our community to connect with other contributors
+</Card>

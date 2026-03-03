@@ -1,0 +1,262 @@
+---
+title: "Embeddings"
+description: "Core embedding interfaces for generating vector representations of text"
+---
+
+## Overview
+
+The Embeddings module provides base classes and interfaces for generating vector embeddings from text. Embeddings are used to convert text into numerical vectors for semantic search and retrieval.
+
+## BaseEmbedding
+
+Abstract base class that all embedding implementations extend.
+
+```typescript
+import { BaseEmbedding } from "@llamaindex/core/embeddings";
+```
+
+### Properties
+
+<ParamField path="embedBatchSize" type="number" default={10}>
+  Number of texts to embed in a single batch
+</ParamField>
+
+<ParamField path="embedInfo" type="EmbeddingInfo">
+  Metadata about the embedding model
+  
+  <Expandable title="EmbeddingInfo Fields">
+    <ParamField path="dimensions" type="number">
+      Dimensionality of the embedding vectors
+    </ParamField>
+    <ParamField path="maxTokens" type="number">
+      Maximum tokens the model can process
+    </ParamField>
+    <ParamField path="tokenizer" type="Tokenizers">
+      Tokenizer used by the model
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Methods
+
+<ParamField path="getTextEmbedding" type="method">
+  Get embedding for a single text string
+  
+  ```typescript
+  abstract getTextEmbedding(text: string): Promise<number[]>
+  ```
+  
+  <Expandable title="Parameters">
+    <ParamField path="text" type="string" required>
+      The text to embed
+    </ParamField>
+  </Expandable>
+  
+  <Expandable title="Returns">
+    <ResponseField name="embedding" type="number[]">
+      The embedding vector
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="getTextEmbeddings" type="method">
+  Get embeddings for multiple texts (batch processing)
+  
+  ```typescript
+  getTextEmbeddings(texts: string[]): Promise<Array<number[]>>
+  ```
+  
+  <Expandable title="Parameters">
+    <ParamField path="texts" type="string[]" required>
+      Array of texts to embed
+    </ParamField>
+  </Expandable>
+  
+  <Expandable title="Returns">
+    <ResponseField name="embeddings" type="number[][]">
+      Array of embedding vectors, one per input text
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="getTextEmbeddingsBatch" type="method">
+  Get embeddings for texts with batching and progress tracking
+  
+  ```typescript
+  getTextEmbeddingsBatch(
+    texts: string[],
+    options?: BaseEmbeddingOptions
+  ): Promise<Array<number[]>>
+  ```
+  
+  <Expandable title="Parameters">
+    <ParamField path="texts" type="string[]" required>
+      Array of texts to embed
+    </ParamField>
+    <ParamField path="options" type="BaseEmbeddingOptions">
+      Embedding options
+      
+      <Expandable title="BaseEmbeddingOptions">
+        <ParamField path="logProgress" type="boolean">
+          Whether to log progress to console
+        </ParamField>
+        <ParamField path="progressCallback" type="(current: number, total: number) => void">
+          Callback function for progress updates
+        </ParamField>
+        <ParamField path="logger" type="Logger">
+          Custom logger instance
+        </ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="getQueryEmbedding" type="method">
+  Get embedding for a query (supports multi-modal content)
+  
+  ```typescript
+  getQueryEmbedding(query: MessageContentDetail): Promise<number[] | null>
+  ```
+  
+  <Expandable title="Parameters">
+    <ParamField path="query" type="MessageContentDetail" required>
+      Query content (text or multi-modal)
+    </ParamField>
+  </Expandable>
+  
+  <Expandable title="Returns">
+    <ResponseField name="embedding" type="number[] | null">
+      The query embedding vector, or null if text extraction fails
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="similarity" type="method">
+  Calculate similarity between two embedding vectors
+  
+  ```typescript
+  similarity(
+    embedding1: number[],
+    embedding2: number[],
+    mode?: SimilarityType
+  ): number
+  ```
+  
+  <Expandable title="Parameters">
+    <ParamField path="embedding1" type="number[]" required>
+      First embedding vector
+    </ParamField>
+    <ParamField path="embedding2" type="number[]" required>
+      Second embedding vector
+    </ParamField>
+    <ParamField path="mode" type="SimilarityType" default="DEFAULT">
+      Similarity metric: `DEFAULT`, `DOT_PRODUCT`, `EUCLIDEAN`, or `COSINE`
+    </ParamField>
+  </Expandable>
+  
+  <Expandable title="Returns">
+    <ResponseField name="similarity" type="number">
+      Similarity score between the two vectors
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+## Usage Examples
+
+### Basic Embedding
+
+```typescript
+import { OpenAIEmbedding } from "@llamaindex/openai";
+
+const embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-small"
+});
+
+const embedding = await embedModel.getTextEmbedding(
+  "LlamaIndex is a data framework for LLM applications"
+);
+
+console.log(embedding.length); // 1536
+```
+
+### Batch Embedding with Progress
+
+```typescript
+const texts = [
+  "First document",
+  "Second document",
+  "Third document"
+];
+
+const embeddings = await embedModel.getTextEmbeddingsBatch(texts, {
+  logProgress: true,
+  progressCallback: (current, total) => {
+    console.log(`Progress: ${current}/${total}`);
+  }
+});
+
+console.log(embeddings.length); // 3
+```
+
+### Embedding Nodes
+
+The `BaseEmbedding` class extends `TransformComponent` and can embed nodes directly:
+
+```typescript
+import { Document } from "@llamaindex/core/schema";
+
+const documents = [
+  new Document({ text: "Document 1" }),
+  new Document({ text: "Document 2" })
+];
+
+// Transform adds embeddings to nodes
+const embeddedNodes = await embedModel.transform(documents);
+
+console.log(embeddedNodes[0].embedding); // number[]
+```
+
+### Similarity Calculation
+
+```typescript
+const embedding1 = await embedModel.getTextEmbedding("cat");
+const embedding2 = await embedModel.getTextEmbedding("dog");
+const embedding3 = await embedModel.getTextEmbedding("car");
+
+const similarity1 = embedModel.similarity(embedding1, embedding2);
+const similarity2 = embedModel.similarity(embedding1, embedding3);
+
+console.log(similarity1 > similarity2); // true (cat and dog are more similar)
+```
+
+## Similarity Types
+
+```typescript
+enum SimilarityType {
+  DEFAULT = "cosine",
+  DOT_PRODUCT = "dot_product",
+  EUCLIDEAN = "euclidean",
+  COSINE = "cosine"
+}
+```
+
+## Token Truncation
+
+Embeddings automatically truncate text that exceeds the model's token limit:
+
+```typescript
+const embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-small"
+});
+
+// Set embedding info with max tokens
+embedModel.embedInfo = {
+  dimensions: 1536,
+  maxTokens: 8191,
+  tokenizer: Tokenizers.CL100K_BASE
+};
+
+// Long text will be automatically truncated
+const longText = "...".repeat(10000);
+const embedding = await embedModel.getTextEmbedding(longText);
+```

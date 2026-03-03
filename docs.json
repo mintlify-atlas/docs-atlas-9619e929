@@ -1,122 +1,189 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "LlamaIndex.TS",
+  "theme": "palm",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#10A37F",
+    "light": "#26D07C",
+    "dark": "#0D8B6B"
   },
   "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/run-llama/LlamaIndexTS"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/run-llama/LlamaIndexTS",
+      "twitter": "https://x.com/llama_index",
+      "discord": "https://discord.com/invite/eN6D2HQ4aX"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Getting Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "installation",
+              "concepts"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "core/architecture",
+              "core/multi-runtime",
+              "core/settings",
+              "core/data-flow"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Building with LlamaIndex",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "guides/rag",
+              "guides/agents",
+              "guides/workflows",
+              "guides/chat-engines",
+              "guides/query-engines"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Data Management",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "data/documents",
+              "data/node-parsers",
+              "data/ingestion",
+              "data/readers",
+              "data/storage"
+            ]
+          },
+          {
+            "group": "Models & Embeddings",
+            "pages": [
+              "models/llms",
+              "models/embeddings",
+              "models/providers"
+            ]
+          },
+          {
+            "group": "Retrievers & Indices",
+            "pages": [
+              "retrievers/vector-store",
+              "retrievers/retriever-modes",
+              "indices/vector-index",
+              "indices/summary-index"
+            ]
+          },
+          {
+            "group": "Advanced Features",
+            "pages": [
+              "advanced/postprocessors",
+              "advanced/response-synthesizers",
+              "advanced/evaluation",
+              "advanced/memory"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Core Package",
             "pages": [
-              "api-reference/introduction"
+              "api/core/llms",
+              "api/core/embeddings",
+              "api/core/schema",
+              "api/core/node-parser",
+              "api/core/query-engine",
+              "api/core/chat-engine"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Main Package",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/llamaindex/overview",
+              "api/llamaindex/agents",
+              "api/llamaindex/engines",
+              "api/llamaindex/indices",
+              "api/llamaindex/ingestion"
+            ]
+          },
+          {
+            "group": "LLM Providers",
+            "pages": [
+              "api/providers/openai",
+              "api/providers/anthropic",
+              "api/providers/ollama",
+              "api/providers/groq",
+              "api/providers/google",
+              "api/providers/mistral"
+            ]
+          },
+          {
+            "group": "Vector Stores",
+            "pages": [
+              "api/storage/pinecone",
+              "api/storage/chroma",
+              "api/storage/qdrant",
+              "api/storage/weaviate"
+            ]
+          },
+          {
+            "group": "Workflow & Tools",
+            "pages": [
+              "api/workflow/overview",
+              "api/workflow/events",
+              "api/tools/function-tools"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Examples",
+        "groups": [
+          {
+            "group": "Examples",
+            "pages": [
+              "examples/overview",
+              "examples/rag-basic",
+              "examples/agent-basic",
+              "examples/workflow-basic",
+              "examples/multimodal",
+              "examples/nextjs-integration"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Migration & Resources",
+        "groups": [
+          {
+            "group": "Migration Guides",
+            "pages": [
+              "migration/from-python",
+              "migration/version-upgrades",
+              "migration/deprecated-features"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "resources/troubleshooting",
+              "resources/community",
+              "resources/contributing",
+              "resources/faq"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

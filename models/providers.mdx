@@ -1,0 +1,746 @@
+---
+title: "Providers"
+description: "LLM and embedding provider ecosystem"
+icon: "plug"
+---
+
+## Overview
+
+LlamaIndex.TS supports a wide range of LLM and embedding providers through dedicated packages. Each provider implements the common `BaseLLM` or `BaseEmbedding` interface, allowing you to switch providers with minimal code changes.
+
+## Provider Packages
+
+All providers are published as separate npm packages following the pattern `@llamaindex/<provider-name>`:
+
+```bash
+npm install @llamaindex/openai
+npm install @llamaindex/anthropic
+npm install @llamaindex/google
+```
+
+<Note>
+Installing only the providers you need keeps your bundle size small.
+</Note>
+
+## Major LLM Providers
+
+<Tabs>
+  <Tab title="OpenAI">
+    ### OpenAI
+
+    OpenAI provides GPT-4 and GPT-3.5 models with excellent performance and tool calling support.
+
+    **Installation:**
+    ```bash
+    npm install @llamaindex/openai
+    ```
+
+    **Environment:**
+    ```bash
+    export OPENAI_API_KEY="sk-..."
+    export OPENAI_BASE_URL="https://api.openai.com/v1"  # Optional
+    ```
+
+    **LLM Usage:**
+    ```typescript
+    import { OpenAI } from "@llamaindex/openai";
+
+    const llm = new OpenAI({
+      model: "gpt-4o",        // or gpt-4o-mini, gpt-4-turbo, gpt-3.5-turbo
+      temperature: 0.7,
+      maxTokens: 1024,
+      apiKey: process.env.OPENAI_API_KEY, // Optional if env var set
+    });
+
+    const response = await llm.chat({
+      messages: [{ role: "user", content: "Hello!" }],
+    });
+    ```
+
+    **Embedding Usage:**
+    ```typescript
+    import { OpenAIEmbedding } from "@llamaindex/openai";
+
+    const embedModel = new OpenAIEmbedding({
+      model: "text-embedding-3-small", // or text-embedding-3-large
+      dimensions: 1536, // Optional: customize dimensions
+    });
+
+    const embedding = await embedModel.getTextEmbedding("Hello world");
+    ```
+
+    **Supported Features:**
+    - Function calling / tool use
+    - Streaming responses
+    - Vision (GPT-4 Vision models)
+    - JSON mode / structured output
+    - Multi-modal inputs (images, files)
+
+    **Popular Models:**
+    - `gpt-4o`: Latest flagship model
+    - `gpt-4o-mini`: Fast, cost-effective
+    - `gpt-4-turbo`: Previous generation flagship
+    - `gpt-3.5-turbo`: Fast and affordable
+  </Tab>
+
+  <Tab title="Anthropic">
+    ### Anthropic (Claude)
+
+    Anthropic's Claude models excel at complex reasoning and long context windows.
+
+    **Installation:**
+    ```bash
+    npm install @llamaindex/anthropic
+    ```
+
+    **Environment:**
+    ```bash
+    export ANTHROPIC_API_KEY="sk-ant-..."
+    ```
+
+    **LLM Usage:**
+    ```typescript
+    import { Anthropic } from "@llamaindex/anthropic";
+
+    const llm = new Anthropic({
+      model: "claude-3-7-sonnet",
+      temperature: 0.7,
+      maxTokens: 2048,
+    });
+
+    const response = await llm.chat({
+      messages: [
+        { role: "system", content: "You are helpful." },
+        { role: "user", content: "Explain quantum computing." },
+      ],
+    });
+    ```
+
+    **Streaming:**
+    ```typescript
+    const stream = await llm.chat({
+      messages: [{ role: "user", content: "Write a story" }],
+      stream: true,
+    });
+
+    for await (const chunk of stream) {
+      process.stdout.write(chunk.delta);
+    }
+    ```
+
+    **Supported Features:**
+    - Tool calling (Claude 3+ models)
+    - Streaming
+    - Vision (images, PDFs)
+    - Extended thinking blocks
+    - Prompt caching
+    - Long context (200k tokens)
+
+    **Popular Models:**
+    - `claude-4-0-sonnet`: Latest Claude 4 flagship
+    - `claude-3-7-sonnet`: Latest Claude 3.7
+    - `claude-3-5-sonnet`: Fast and intelligent
+    - `claude-3-5-haiku`: Ultra-fast responses
+    - `claude-3-opus`: Most capable Claude 3
+  </Tab>
+
+  <Tab title="Google Gemini">
+    ### Google Gemini
+
+    Google's Gemini models offer strong multi-modal capabilities and large context windows.
+
+    **Installation:**
+    ```bash
+    npm install @llamaindex/google
+    ```
+
+    **Environment:**
+    ```bash
+    export GOOGLE_API_KEY="..."
+    ```
+
+    **LLM Usage:**
+    ```typescript
+    import { gemini, GEMINI_MODEL } from "@llamaindex/google";
+
+    const llm = gemini({
+      model: GEMINI_MODEL.GEMINI_2_0_FLASH,
+      temperature: 0.7,
+    });
+
+    const response = await llm.chat({
+      messages: [{ role: "user", content: "Hello!" }],
+    });
+    ```
+
+    **Vertex AI (GCP):**
+    ```typescript
+    const llm = gemini({
+      model: GEMINI_MODEL.GEMINI_2_0_FLASH,
+      vertex: {
+        project: "your-gcp-project",
+        location: "us-central1",
+      },
+    });
+    ```
+
+    **Embedding Usage:**
+    ```typescript
+    import { GeminiEmbedding, GEMINI_EMBEDDING_MODEL } from "@llamaindex/google";
+
+    const embedModel = new GeminiEmbedding({
+      model: GEMINI_EMBEDDING_MODEL.TEXT_EMBEDDING_004,
+    });
+    ```
+
+    **Supported Features:**
+    - Function calling
+    - Multi-modal (text, images, video, audio)
+    - Large context windows (up to 2M tokens)
+    - Live API for real-time conversations
+    - Streaming
+
+    **Popular Models:**
+    - `gemini-2.0-flash`: Latest fast model
+    - `gemini-1.5-pro`: Balanced performance
+    - `gemini-1.5-flash`: Fast inference
+  </Tab>
+
+  <Tab title="Ollama">
+    ### Ollama (Local Models)
+
+    Run LLMs locally with Ollama - great for privacy and offline use.
+
+    **Installation:**
+    ```bash
+    npm install @llamaindex/ollama
+    # Also install Ollama: https://ollama.ai
+    ```
+
+    **Setup:**
+    ```bash
+    # Start Ollama server
+    ollama serve
+    
+    # Pull a model
+    ollama pull llama3.1
+    ```
+
+    **LLM Usage:**
+    ```typescript
+    import { Ollama } from "@llamaindex/ollama";
+
+    const llm = new Ollama({
+      model: "llama3.1",
+      config: {
+        host: "http://localhost:11434",
+      },
+      options: {
+        temperature: 0.7,
+        num_ctx: 4096,
+      },
+    });
+
+    const response = await llm.chat({
+      messages: [{ role: "user", content: "Hello!" }],
+    });
+    ```
+
+    **Embedding Usage:**
+    ```typescript
+    import { OllamaEmbedding } from "@llamaindex/ollama";
+
+    const embedModel = new OllamaEmbedding({
+      model: "nomic-embed-text",
+      config: { host: "http://localhost:11434" },
+    });
+    ```
+
+    **Supported Features:**
+    - Tool calling
+    - Streaming
+    - Local/offline operation
+    - Custom models
+    - No API costs
+
+    **Popular Models:**
+    - `llama3.1`: Meta's latest Llama
+    - `mistral`: Mistral 7B
+    - `codellama`: Code generation
+    - `nomic-embed-text`: Embeddings
+  </Tab>
+
+  <Tab title="Groq">
+    ### Groq
+
+    Ultra-fast LLM inference with Groq's custom hardware.
+
+    **Installation:**
+    ```bash
+    npm install @llamaindex/groq
+    ```
+
+    **Environment:**
+    ```bash
+    export GROQ_API_KEY="gsk_..."
+    ```
+
+    **LLM Usage:**
+    ```typescript
+    import { Groq } from "@llamaindex/groq";
+
+    const llm = new Groq({
+      model: "llama-3.1-70b-versatile",
+      temperature: 0.7,
+    });
+
+    const response = await llm.chat({
+      messages: [{ role: "user", content: "Hello!" }],
+    });
+    ```
+
+    **Supported Features:**
+    - Extremely fast inference
+    - Tool calling
+    - Streaming
+    - Open-source models
+
+    **Popular Models:**
+    - `llama-3.1-70b-versatile`
+    - `llama-3.1-8b-instant`
+    - `mixtral-8x7b-32768`
+    - `gemma-7b-it`
+  </Tab>
+
+  <Tab title="Mistral">
+    ### Mistral AI
+
+    High-performance European AI models.
+
+    **Installation:**
+    ```bash
+    npm install @llamaindex/mistral
+    ```
+
+    **Environment:**
+    ```bash
+    export MISTRAL_API_KEY="..."
+    ```
+
+    **LLM Usage:**
+    ```typescript
+    import { MistralAI } from "@llamaindex/mistral";
+
+    const llm = new MistralAI({
+      model: "mistral-large-latest",
+      temperature: 0.7,
+    });
+
+    const response = await llm.chat({
+      messages: [{ role: "user", content: "Hello!" }],
+    });
+    ```
+
+    **Supported Features:**
+    - Function calling
+    - Streaming
+    - JSON mode
+    - Embeddings
+
+    **Popular Models:**
+    - `mistral-large-latest`: Most capable
+    - `mistral-small-latest`: Fast and efficient
+    - `mistral-embed`: Embeddings
+  </Tab>
+</Tabs>
+
+## Additional Providers
+
+<AccordionGroup>
+  <Accordion title="Deepseek" icon="magnifying-glass">
+    ### Deepseek
+
+    ```bash
+    npm install @llamaindex/deepseek
+    ```
+
+    ```typescript
+    import { DeepSeek } from "@llamaindex/deepseek";
+
+    const llm = new DeepSeek({
+      model: "deepseek-chat",
+      apiKey: process.env.DEEPSEEK_API_KEY,
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Fireworks" icon="fire">
+    ### Fireworks AI
+
+    Fast inference for open-source models.
+
+    ```bash
+    npm install @llamaindex/fireworks
+    ```
+
+    ```typescript
+    import { FireworksLLM } from "@llamaindex/fireworks";
+
+    const llm = new FireworksLLM({
+      model: "accounts/fireworks/models/llama-v3-70b-instruct",
+      apiKey: process.env.FIREWORKS_API_KEY,
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Together AI" icon="users">
+    ### Together AI
+
+    Run open-source models at scale.
+
+    ```bash
+    npm install @llamaindex/together
+    ```
+
+    ```typescript
+    import { TogetherLLM } from "@llamaindex/together";
+
+    const llm = new TogetherLLM({
+      model: "mistralai/Mixtral-8x7B-Instruct-v0.1",
+      apiKey: process.env.TOGETHER_API_KEY,
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Perplexity" icon="sparkles">
+    ### Perplexity
+
+    Online LLMs with real-time web search.
+
+    ```bash
+    npm install @llamaindex/perplexity
+    ```
+
+    ```typescript
+    import { PerplexityLLM } from "@llamaindex/perplexity";
+
+    const llm = new PerplexityLLM({
+      model: "llama-3.1-sonar-large-128k-online",
+      apiKey: process.env.PERPLEXITY_API_KEY,
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Replicate" icon="copy">
+    ### Replicate
+
+    Run open-source models via cloud API.
+
+    ```bash
+    npm install @llamaindex/replicate
+    ```
+
+    ```typescript
+    import { ReplicateLLM } from "@llamaindex/replicate";
+
+    const llm = new ReplicateLLM({
+      model: "meta/llama-2-70b-chat",
+      apiKey: process.env.REPLICATE_API_KEY,
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="xAI (Grok)" icon="x">
+    ### xAI
+
+    Grok models from xAI.
+
+    ```bash
+    npm install @llamaindex/xai
+    ```
+
+    ```typescript
+    import { XAI } from "@llamaindex/xai";
+
+    const llm = new XAI({
+      model: "grok-beta",
+      apiKey: process.env.XAI_API_KEY,
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Vercel AI SDK" icon="triangle">
+    ### Vercel AI
+
+    Integration with Vercel AI SDK.
+
+    ```bash
+    npm install @llamaindex/vercel
+    ```
+
+    ```typescript
+    import { VercelLLM } from "@llamaindex/vercel";
+    import { openai } from "@ai-sdk/openai";
+
+    const llm = new VercelLLM({
+      model: openai("gpt-4o"),
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="AWS Bedrock" icon="aws">
+    ### AWS Bedrock
+
+    LLMs through AWS Bedrock.
+
+    ```bash
+    npm install @llamaindex/aws
+    ```
+
+    ```typescript
+    import { BedrockLLM } from "@llamaindex/aws";
+
+    const llm = new BedrockLLM({
+      model: "anthropic.claude-3-sonnet-20240229-v1:0",
+      region: "us-east-1",
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="vLLM" icon="server">
+    ### vLLM
+
+    Self-hosted high-performance inference.
+
+    ```bash
+    npm install @llamaindex/vllm
+    ```
+
+    ```typescript
+    import { VLLM } from "@llamaindex/vllm";
+
+    const llm = new VLLM({
+      model: "mistralai/Mistral-7B-Instruct-v0.2",
+      baseURL: "http://localhost:8000/v1",
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Portkey" icon="key">
+    ### Portkey AI
+
+    LLM gateway with observability and routing.
+
+    ```bash
+    npm install @llamaindex/portkey-ai
+    ```
+
+    ```typescript
+    import { PortkeyLLM } from "@llamaindex/portkey-ai";
+
+    const llm = new PortkeyLLM({
+      apiKey: process.env.PORTKEY_API_KEY,
+      virtualKey: "openai-virtual-key",
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Embedding Providers
+
+<Tabs>
+  <Tab title="OpenAI">
+    ```typescript
+    import { OpenAIEmbedding } from "@llamaindex/openai";
+
+    const embedModel = new OpenAIEmbedding({
+      model: "text-embedding-3-small",
+      dimensions: 1536,
+    });
+    ```
+
+    **Models:**
+    - `text-embedding-3-small`: 1536 dims (customizable)
+    - `text-embedding-3-large`: 3072 dims (customizable)
+    - `text-embedding-ada-002`: 1536 dims (legacy)
+  </Tab>
+
+  <Tab title="Voyage AI">
+    ```typescript
+    import { VoyageAIEmbedding } from "@llamaindex/voyage-ai";
+
+    const embedModel = new VoyageAIEmbedding({
+      model: "voyage-2",
+      apiKey: process.env.VOYAGE_API_KEY,
+    });
+    ```
+
+    Domain-optimized embedding models for better accuracy.
+  </Tab>
+
+  <Tab title="Cohere">
+    ```typescript
+    import { CohereEmbedding } from "@llamaindex/cohere";
+
+    const embedModel = new CohereEmbedding({
+      model: "embed-english-v3.0",
+      apiKey: process.env.COHERE_API_KEY,
+    });
+    ```
+
+    Strong multilingual support.
+  </Tab>
+
+  <Tab title="HuggingFace">
+    ```typescript
+    import { HuggingFaceEmbedding } from "@llamaindex/huggingface";
+
+    const embedModel = new HuggingFaceEmbedding({
+      modelType: "BAAI/bge-small-en-v1.5",
+      apiKey: process.env.HUGGINGFACE_API_KEY,
+    });
+    ```
+
+    Access thousands of open-source embedding models.
+  </Tab>
+
+  <Tab title="Jina AI">
+    ```typescript
+    import { JinaAIEmbedding } from "@llamaindex/jinaai";
+
+    const embedModel = new JinaAIEmbedding({
+      model: "jina-embeddings-v2-base-en",
+      apiKey: process.env.JINAAI_API_KEY,
+    });
+    ```
+
+    Optimized for semantic search.
+  </Tab>
+
+  <Tab title="Mixedbread">
+    ```typescript
+    import { MixedbreadEmbedding } from "@llamaindex/mixedbread";
+
+    const embedModel = new MixedbreadEmbedding({
+      model: "mixedbread-ai/mxbai-embed-large-v1",
+      apiKey: process.env.MIXEDBREAD_API_KEY,
+    });
+    ```
+
+    High-quality multilingual embeddings.
+  </Tab>
+
+  <Tab title="CLIP">
+    ```typescript
+    import { ClipEmbedding } from "@llamaindex/clip";
+
+    const embedModel = new ClipEmbedding();
+
+    // Embed images and text in same space
+    const imageEmb = await embedModel.getImageEmbedding(imageBuffer);
+    const textEmb = await embedModel.getTextEmbedding("a cat");
+    ```
+
+    Multi-modal embeddings for images and text.
+  </Tab>
+</Tabs>
+
+## Provider Comparison
+
+| Provider | LLM | Embeddings | Function Calling | Vision | Local | Cost |
+|----------|-----|------------|------------------|---------|-------|------|
+| OpenAI | ✅ | ✅ | ✅ | ✅ | ❌ | $$$ |
+| Anthropic | ✅ | ❌ | ✅ | ✅ | ❌ | $$$ |
+| Google | ✅ | ✅ | ✅ | ✅ | ❌ | $$ |
+| Ollama | ✅ | ✅ | ✅ | ⚠️ | ✅ | Free |
+| Groq | ✅ | ❌ | ✅ | ❌ | ❌ | $ |
+| Mistral | ✅ | ✅ | ✅ | ❌ | ❌ | $$ |
+| Voyage AI | ❌ | ✅ | N/A | ❌ | ❌ | $ |
+| Cohere | ✅ | ✅ | ✅ | ❌ | ❌ | $$ |
+
+## Switching Providers
+
+Thanks to the unified interface, switching providers is simple:
+
+```typescript
+import { Settings } from "llamaindex";
+import { OpenAI } from "@llamaindex/openai";
+import { Anthropic } from "@llamaindex/anthropic";
+
+// Use OpenAI
+Settings.llm = new OpenAI({ model: "gpt-4o" });
+
+// Switch to Anthropic
+Settings.llm = new Anthropic({ model: "claude-3-7-sonnet" });
+
+// All your code continues to work!
+const index = await VectorStoreIndex.fromDocuments(docs);
+const response = await index.query({ query: "What is RAG?" });
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use environment variables for API keys">
+    ```bash
+    # .env file
+    OPENAI_API_KEY=sk-...
+    ANTHROPIC_API_KEY=sk-ant-...
+    GOOGLE_API_KEY=...
+    ```
+
+    LlamaIndex.TS automatically detects these standard environment variables.
+  </Accordion>
+
+  <Accordion title="Install only what you need">
+    ```bash
+    # Good: Only install providers you use
+    npm install @llamaindex/openai @llamaindex/anthropic
+
+    # Avoid: Installing everything
+    npm install @llamaindex/*
+    ```
+
+    This keeps your `node_modules` small and deploy times fast.
+  </Accordion>
+
+  <Accordion title="Consider cost vs performance">
+    - **Development**: Use cheaper models like `gpt-4o-mini` or Ollama
+    - **Production**: Upgrade to `gpt-4o` or `claude-3-7-sonnet` for quality
+    - **Embeddings**: `text-embedding-3-small` offers great quality/cost ratio
+  </Accordion>
+
+  <Accordion title="Use local models for privacy">
+    For sensitive data, use Ollama or vLLM to run models on your infrastructure:
+    ```typescript
+    const llm = new Ollama({ model: "llama3.1" });
+    // Data never leaves your servers
+    ```
+  </Accordion>
+
+  <Accordion title="Test with multiple providers">
+    Different providers excel at different tasks:
+    ```typescript
+    // Claude for long-form reasoning
+    const claudeEngine = index.asQueryEngine({ 
+      llm: new Anthropic({ model: "claude-3-7-sonnet" }) 
+    });
+
+    // GPT-4 for structured output
+    const gptEngine = index.asQueryEngine({ 
+      llm: new OpenAI({ model: "gpt-4o" }) 
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="LLMs" icon="comments" href="/models/llms">
+    Learn about the LLM interface and capabilities
+  </Card>
+  <Card title="Embeddings" icon="brain" href="/models/embeddings">
+    Understand embedding models for semantic search
+  </Card>
+</CardGroup>

@@ -1,0 +1,211 @@
+---
+title: "Mistral"
+description: "Mistral AI LLM and embedding provider"
+icon: "wind"
+---
+
+## Overview
+
+Mistral AI provides powerful open-source and proprietary models including Mistral Large, Mixtral, and specialized coding models.
+
+## Installation
+
+```bash
+npm install @llamaindex/mistral
+```
+
+## Basic Usage
+
+```typescript
+import { MistralAI } from "@llamaindex/mistral";
+
+const llm = new MistralAI({
+  model: "mistral-large-latest",
+  apiKey: process.env.MISTRAL_API_KEY
+});
+
+const response = await llm.chat({
+  messages: [
+    { role: "user", content: "Explain AI safety" }
+  ]
+});
+
+console.log(response.message.content);
+```
+
+## Constructor Options
+
+<ParamField path="model" type="string" required>
+  Mistral model name
+</ParamField>
+
+<ParamField path="apiKey" type="string">
+  Mistral API key (defaults to `MISTRAL_API_KEY` env variable)
+</ParamField>
+
+<ParamField path="temperature" type="number" default={0.7}>
+  Sampling temperature
+</ParamField>
+
+<ParamField path="maxTokens" type="number">
+  Maximum tokens in response
+</ParamField>
+
+<ParamField path="topP" type="number" default={1}>
+  Nucleus sampling
+</ParamField>
+
+## Supported Models
+
+### Proprietary Models
+
+- `mistral-large-latest`: Most capable model
+- `mistral-medium-latest`: Balanced performance
+- `mistral-small-latest`: Fast and efficient
+
+### Open Models
+
+- `open-mixtral-8x7b`: Mixtral 8x7B MoE
+- `open-mixtral-8x22b`: Mixtral 8x22B MoE
+- `open-mistral-7b`: Mistral 7B
+- `open-mistral-nemo`: Mistral Nemo 12B
+
+### Specialized Models
+
+- `codestral-latest`: Code generation
+- `mistral-embed`: Embeddings
+
+## Streaming
+
+```typescript
+const stream = await llm.chat({
+  messages: [{ role: "user", content: "Write code for..." }],
+  stream: true
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.delta);
+}
+```
+
+## Function Calling
+
+```typescript
+import { tool } from "@llamaindex/core/tools";
+import { z } from "zod";
+
+const searchTool = tool({
+  name: "search",
+  description: "Search for information",
+  parameters: z.object({
+    query: z.string()
+  }),
+  execute: async ({ query }) => {
+    return `Search results for: ${query}`;
+  }
+});
+
+const response = await llm.chat({
+  messages: [{ role: "user", content: "Search for AI news" }],
+  tools: [searchTool]
+});
+```
+
+## Codestral
+
+Specialized model for code generation:
+
+```typescript
+const codeLLM = new MistralAI({
+  model: "codestral-latest"
+});
+
+const response = await codeLLM.chat({
+  messages: [
+    {
+      role: "user",
+      content: "Write a function to calculate fibonacci numbers"
+    }
+  ]
+});
+
+console.log(response.message.content);
+```
+
+## Mistral Embeddings
+
+```typescript
+import { MistralAIEmbedding } from "@llamaindex/mistral";
+
+const embedModel = new MistralAIEmbedding({
+  model: "mistral-embed",
+  apiKey: process.env.MISTRAL_API_KEY
+});
+
+const embedding = await embedModel.getTextEmbedding(
+  "LlamaIndex is a data framework"
+);
+
+console.log(embedding.length); // 1024
+```
+
+## Configuration
+
+### Environment Variables
+
+```bash
+MISTRAL_API_KEY=...
+```
+
+Get API key: [Mistral AI Console](https://console.mistral.ai)
+
+### Global Settings
+
+```typescript
+import { Settings } from "llamaindex";
+import { MistralAI, MistralAIEmbedding } from "@llamaindex/mistral";
+
+Settings.llm = new MistralAI({ model: "mistral-large-latest" });
+Settings.embedModel = new MistralAIEmbedding();
+```
+
+## With LlamaIndex
+
+```typescript
+import { Settings, VectorStoreIndex } from "llamaindex";
+import { MistralAI } from "@llamaindex/mistral";
+
+Settings.llm = new MistralAI({ model: "mistral-large-latest" });
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+const queryEngine = index.asQueryEngine();
+
+const response = await queryEngine.query({
+  query: "Summarize the documents"
+});
+```
+
+## Model Selection Guide
+
+| Use Case | Recommended Model |
+|----------|------------------|
+| Complex reasoning | mistral-large-latest |
+| General purpose | mistral-medium-latest |
+| Speed critical | mistral-small-latest |
+| Code generation | codestral-latest |
+| MoE architecture | open-mixtral-8x22b |
+| Budget-friendly | open-mistral-7b |
+
+## Best Practices
+
+1. **Use appropriate model**: Balance cost, speed, and capability
+2. **Leverage Codestral**: Best-in-class code generation
+3. **Monitor API usage**: Track costs in console
+4. **Stream responses**: Better UX for long outputs
+5. **Use function calling**: Reliable tool integration
+
+## See Also
+
+- [Mistral AI Documentation](https://docs.mistral.ai)
+- [Core LLM API](/api/core/llms)
+- [Mistral AI Console](https://console.mistral.ai)

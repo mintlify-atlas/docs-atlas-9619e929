@@ -1,0 +1,228 @@
+---
+title: "Groq"
+description: "Groq ultra-fast LLM inference provider"
+icon: "bolt"
+---
+
+## Overview
+
+Groq provides ultra-fast inference for open-source LLMs like Llama, Mixtral, and Gemma with speeds up to 500+ tokens/second.
+
+## Installation
+
+```bash
+npm install @llamaindex/groq
+```
+
+## Basic Usage
+
+```typescript
+import { Groq } from "@llamaindex/groq";
+
+const llm = new Groq({
+  model: "llama-3.1-70b-versatile",
+  apiKey: process.env.GROQ_API_KEY
+});
+
+const response = await llm.chat({
+  messages: [
+    { role: "user", content: "Explain quantum computing" }
+  ]
+});
+
+console.log(response.message.content);
+```
+
+## Constructor Options
+
+<ParamField path="model" type="string" required>
+  Groq model name
+</ParamField>
+
+<ParamField path="apiKey" type="string">
+  Groq API key (defaults to `GROQ_API_KEY` env variable)
+</ParamField>
+
+<ParamField path="temperature" type="number" default={0.1}>
+  Sampling temperature
+</ParamField>
+
+<ParamField path="maxTokens" type="number">
+  Maximum tokens in response
+</ParamField>
+
+<ParamField path="topP" type="number" default={1}>
+  Nucleus sampling parameter
+</ParamField>
+
+## Supported Models
+
+### Llama 3.1
+
+- `llama-3.1-405b-reasoning`: Most capable
+- `llama-3.1-70b-versatile`: Balanced performance
+- `llama-3.1-8b-instant`: Fastest
+
+### Llama 3
+
+- `llama3-70b-8192`: 70B parameter model
+- `llama3-8b-8192`: 8B parameter model
+
+### Mixtral
+
+- `mixtral-8x7b-32768`: Mixtral MoE model
+
+### Gemma
+
+- `gemma-7b-it`: Google Gemma 7B
+- `gemma2-9b-it`: Gemma 2 9B
+
+## Streaming
+
+```typescript
+const stream = await llm.chat({
+  messages: [{ role: "user", content: "Write a story" }],
+  stream: true
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.delta);
+}
+```
+
+## Function Calling
+
+```typescript
+import { tool } from "@llamaindex/core/tools";
+import { z } from "zod";
+
+const weatherTool = tool({
+  name: "get_weather",
+  description: "Get weather for a location",
+  parameters: z.object({
+    location: z.string()
+  }),
+  execute: async ({ location }) => {
+    return `Weather in ${location}: 72°F`;
+  }
+});
+
+const response = await llm.chat({
+  messages: [{ role: "user", content: "Weather in NYC?" }],
+  tools: [weatherTool]
+});
+```
+
+## Structured Output
+
+```typescript
+import { z } from "zod";
+
+const schema = z.object({
+  summary: z.string(),
+  sentiment: z.enum(["positive", "negative", "neutral"]),
+  topics: z.array(z.string())
+});
+
+const result = await llm.exec({
+  messages: [{ role: "user", content: "Analyze: Great product, fast shipping!" }],
+  responseFormat: schema
+});
+```
+
+## Configuration
+
+### Environment Variables
+
+```bash
+GROQ_API_KEY=gsk_...
+```
+
+### Global Settings
+
+```typescript
+import { Settings } from "llamaindex";
+import { Groq } from "@llamaindex/groq";
+
+Settings.llm = new Groq({
+  model: "llama-3.1-70b-versatile"
+});
+```
+
+## Performance
+
+Groq's LPU (Language Processing Unit) delivers exceptional speed:
+
+```typescript
+const startTime = Date.now();
+
+const response = await llm.chat({
+  messages: [{ role: "user", content: "Explain AI" }]
+});
+
+const duration = Date.now() - startTime;
+console.log(`Response time: ${duration}ms`);
+console.log(`Tokens/sec: ${response.raw.usage.completion_tokens / (duration / 1000)}`);
+```
+
+Typical speeds: 300-500 tokens/second
+
+## With LlamaIndex
+
+```typescript
+import { Settings, VectorStoreIndex } from "llamaindex";
+import { Groq } from "@llamaindex/groq";
+
+Settings.llm = new Groq({ model: "llama-3.1-70b-versatile" });
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+const queryEngine = index.asQueryEngine();
+
+const response = await queryEngine.query({
+  query: "What is the main topic?"
+});
+```
+
+## Model Selection Guide
+
+| Use Case | Recommended Model | Why |
+|----------|-------------------|-----|
+| Complex reasoning | llama-3.1-405b-reasoning | Best quality |
+| General purpose | llama-3.1-70b-versatile | Balanced |
+| Speed critical | llama-3.1-8b-instant | Fastest |
+| Long context | mixtral-8x7b-32768 | 32K context |
+
+## Rate Limits
+
+Groq has generous free tier limits:
+
+- **Free**: 30 requests/minute
+- **Paid**: Higher limits based on plan
+
+Handle rate limits:
+
+```typescript
+try {
+  const response = await llm.chat({ messages });
+} catch (error) {
+  if (error.status === 429) {
+    console.log("Rate limit hit, waiting...");
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Retry
+  }
+}
+```
+
+## Best Practices
+
+1. **Use for production**: Groq's speed excellent for real-time applications
+2. **Choose right model**: Balance speed vs capability
+3. **Monitor usage**: Track API calls and costs
+4. **Stream responses**: Even better UX with Groq's speed
+5. **Handle rate limits**: Implement retry logic
+
+## See Also
+
+- [Groq Documentation](https://console.groq.com/docs)
+- [Core LLM API](/api/core/llms)
+- [Groq Console](https://console.groq.com)

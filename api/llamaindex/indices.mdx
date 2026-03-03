@@ -1,0 +1,332 @@
+---
+title: "Indices"
+description: "Data structures for organizing and retrieving information"
+---
+
+## Overview
+
+Indices organize your data for efficient retrieval. LlamaIndex provides several index types optimized for different use cases.
+
+## VectorStoreIndex
+
+Most common index type using vector embeddings for semantic search.
+
+```typescript
+import { VectorStoreIndex, Document } from "llamaindex";
+
+const documents = [
+  new Document({ text: "LlamaIndex is a data framework." }),
+  new Document({ text: "It helps build LLM applications." })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+```
+
+### Constructor Options
+
+<ParamField path="nodes" type="BaseNode[]">
+  Nodes to index
+</ParamField>
+
+<ParamField path="vectorStore" type="VectorStore">
+  Vector store backend (defaults to SimpleVectorStore)
+</ParamField>
+
+<ParamField path="storageContext" type="StorageContext">
+  Storage configuration
+</ParamField>
+
+<ParamField path="serviceContext" type="ServiceContext">
+  Service configuration (deprecated, use Settings instead)
+</ParamField>
+
+### Methods
+
+<ParamField path="fromDocuments" type="static method">
+  Create index from documents
+  
+  ```typescript
+  static async fromDocuments(
+    documents: Document[],
+    options?: { storageContext?: StorageContext }
+  ): Promise<VectorStoreIndex>
+  ```
+</ParamField>
+
+<ParamField path="asQueryEngine" type="method">
+  Convert index to query engine
+  
+  ```typescript
+  asQueryEngine(options?: {
+    retriever?: BaseRetriever;
+    responseSynthesizer?: ResponseSynthesizer;
+    similarityTopK?: number;
+  }): BaseQueryEngine
+  ```
+</ParamField>
+
+<ParamField path="asChatEngine" type="method">
+  Convert index to chat engine
+  
+  ```typescript
+  asChatEngine(options?: {
+    retriever?: BaseRetriever;
+    chatHistory?: ChatMessage[];
+    systemPrompt?: string;
+  }): BaseChatEngine
+  ```
+</ParamField>
+
+<ParamField path="asRetriever" type="method">
+  Convert index to retriever
+  
+  ```typescript
+  asRetriever(options?: {
+    similarityTopK?: number;
+    mode?: "default" | "mmr";
+  }): BaseRetriever
+  ```
+</ParamField>
+
+<ParamField path="insert" type="method">
+  Insert new document
+  
+  ```typescript
+  async insert(document: Document): Promise<void>
+  ```
+</ParamField>
+
+<ParamField path="insertNodes" type="method">
+  Insert new nodes
+  
+  ```typescript
+  async insertNodes(nodes: BaseNode[]): Promise<void>
+  ```
+</ParamField>
+
+<ParamField path="deleteRef" type="method">
+  Delete document by ID
+  
+  ```typescript
+  async deleteRef(docId: string): Promise<void>
+  ```
+</ParamField>
+
+### Example: Custom Vector Store
+
+```typescript
+import { VectorStoreIndex } from "llamaindex";
+import { PineconeVectorStore } from "@llamaindex/pinecone";
+
+const vectorStore = new PineconeVectorStore({
+  indexName: "my-index"
+});
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+```
+
+### Example: Persistence
+
+```typescript
+import { VectorStoreIndex, storageContextFromDefaults } from "llamaindex";
+
+// Create with persistence
+const storageContext = await storageContextFromDefaults({
+  persistDir: "./storage"
+});
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext
+});
+
+// Load from storage
+const loadedContext = await storageContextFromDefaults({
+  persistDir: "./storage"
+});
+
+const loadedIndex = await VectorStoreIndex.fromVectorStore(
+  loadedContext.vectorStore,
+  { storageContext: loadedContext }
+);
+```
+
+## SummaryIndex
+
+Index that retrieves all nodes (useful for summarization).
+
+```typescript
+import { SummaryIndex } from "llamaindex";
+
+const index = await SummaryIndex.fromDocuments(documents);
+
+const queryEngine = index.asQueryEngine({
+  responseSynthesizer: treeSummarizeSynthesizer
+});
+
+const summary = await queryEngine.query({
+  query: "Summarize all documents"
+});
+```
+
+### Use Cases
+
+- Document summarization
+- Full-text queries requiring all context
+- Small document collections
+
+## KeywordTableIndex
+
+Index based on keyword extraction.
+
+```typescript
+import { KeywordTableIndex } from "llamaindex";
+
+const index = await KeywordTableIndex.fromDocuments(documents);
+
+const queryEngine = index.asQueryEngine({
+  mode: "rake" // or "simple"
+});
+
+const response = await queryEngine.query({
+  query: "machine learning algorithms"
+});
+```
+
+### Keyword Extraction Modes
+
+- `rake`: RAKE algorithm for keyword extraction
+- `simple`: Simple token-based extraction
+
+### Use Cases
+
+- Keyword-based search
+- Exact term matching
+- Complement to vector search
+
+## Composable Indices
+
+Combine multiple indices for hybrid search:
+
+```typescript
+import { VectorStoreIndex, KeywordTableIndex } from "llamaindex";
+
+const vectorIndex = await VectorStoreIndex.fromDocuments(docs1);
+const keywordIndex = await KeywordTableIndex.fromDocuments(docs2);
+
+const queryEngineTools = [
+  {
+    queryEngine: vectorIndex.asQueryEngine(),
+    description: "Semantic search"
+  },
+  {
+    queryEngine: keywordIndex.asQueryEngine(),
+    description: "Keyword search"
+  }
+];
+
+const routerEngine = new RouterQueryEngine({
+  selector: new LLMSingleSelector(),
+  queryEngineTools
+});
+```
+
+## Retrieval Modes
+
+### Default Retrieval
+
+```typescript
+const retriever = index.asRetriever({
+  similarityTopK: 5
+});
+```
+
+### MMR (Maximal Marginal Relevance)
+
+Diversity-based retrieval:
+
+```typescript
+const retriever = index.asRetriever({
+  similarityTopK: 10,
+  mode: "mmr"
+});
+```
+
+## Metadata Filtering
+
+Filter nodes by metadata during retrieval:
+
+```typescript
+import { MetadataFilters } from "@llamaindex/core/vector-store";
+
+const documents = [
+  new Document({
+    text: "Doc 1",
+    metadata: { category: "tech", year: 2023 }
+  }),
+  new Document({
+    text: "Doc 2",
+    metadata: { category: "science", year: 2024 }
+  })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+
+const retriever = index.asRetriever({
+  filters: new MetadataFilters({
+    filters: [
+      { key: "category", value: "tech" },
+      { key: "year", value: 2023, operator: ">=" }
+    ]
+  })
+});
+```
+
+## Index Updates
+
+### Insert Documents
+
+```typescript
+const newDoc = new Document({ text: "New content" });
+await index.insert(newDoc);
+```
+
+### Delete Documents
+
+```typescript
+await index.deleteRef(docId);
+```
+
+### Refresh Index
+
+```typescript
+const updatedDocs = documents.map(doc => {
+  doc.text = updatedText;
+  return doc;
+});
+
+// Delete old and insert new
+for (const doc of oldDocs) {
+  await index.deleteRef(doc.id_);
+}
+
+for (const doc of updatedDocs) {
+  await index.insert(doc);
+}
+```
+
+## Best Practices
+
+1. **Use VectorStoreIndex for most cases**: Best for semantic search
+2. **Persist indices**: Save to disk to avoid reindexing
+3. **Configure chunk size**: Adjust via Settings for optimal retrieval
+4. **Use external vector stores**: Pinecone, Chroma, etc. for production
+5. **Filter with metadata**: Narrow search scope for better results
+6. **Combine index types**: Use RouterQueryEngine for hybrid search
+
+## See Also
+
+- [Vector Stores](/api/storage/pinecone)
+- [Query Engines](/api/llamaindex/engines)
+- [Ingestion Pipeline](/api/llamaindex/ingestion)

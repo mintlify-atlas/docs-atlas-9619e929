@@ -1,0 +1,285 @@
+---
+title: Framework Architecture
+description: Understanding LlamaIndex.TS monorepo structure, package organization, and design patterns
+---
+
+LlamaIndex.TS is built as a modular TypeScript framework organized as a pnpm monorepo. This architecture enables runtime-agnostic functionality, provider flexibility, and optimal bundle sizes.
+
+## Monorepo Structure
+
+The framework is organized into three main package categories:
+
+<CardGroup cols={3}>
+  <Card title="Core Packages" icon="cube">
+    Abstract base classes and runtime-agnostic functionality
+  </Card>
+  <Card title="Main Package" icon="box">
+    Aggregates core functionality with concrete implementations
+  </Card>
+  <Card title="Provider Packages" icon="plug">
+    Specific integrations for LLMs, embeddings, and vector stores
+  </Card>
+</CardGroup>
+
+### Core Packages
+
+<CodeGroup>
+
+```bash packages/core
+@llamaindex/core       # Abstract base classes and interfaces
+@llamaindex/env        # Runtime environment abstraction
+@llamaindex/node-parser # Text chunking and parsing
+@llamaindex/workflow   # Agent workflow orchestration
+```
+
+</CodeGroup>
+
+The `@llamaindex/core` package exports functionality as **modular sub-modules** for optimal tree-shaking:
+
+```typescript
+import { BaseLLM } from "@llamaindex/core/llms";
+import { BaseEmbedding } from "@llamaindex/core/embeddings";
+import { BaseNode } from "@llamaindex/core/schema";
+import { Settings } from "@llamaindex/core/global";
+import { BaseVectorStore } from "@llamaindex/core/vector-store";
+import { BaseRetriever } from "@llamaindex/core/retriever";
+```
+
+<Note>
+Each sub-module can be imported independently, reducing bundle size by only including what you use.
+</Note>
+
+### Main Package
+
+The `llamaindex` package is the primary entry point that:
+
+- Re-exports core abstractions from `@llamaindex/core`
+- Provides concrete implementations (indices, engines, pipelines)
+- Supports multiple runtime entry points
+- Aggregates common functionality for convenience
+
+```typescript package.json exports
+{
+  "exports": {
+    ".": {
+      "workerd": "./dist/index.workerd.js",      // Cloudflare Workers
+      "edge-light": "./dist/index.edge.js",      // Vercel Edge
+      "react-server": "./dist/index.react-server.js", // RSC
+      "import": "./dist/index.js",                // Node.js ESM
+      "require": "./dist/cjs/index.cjs"           // Node.js CJS
+    },
+    "./engines": "./engines/dist/index.js",
+    "./indices": "./indices/dist/index.js",
+    "./ingestion": "./ingestion/dist/index.js"
+    // ... more sub-modules
+  }
+}
+```
+
+### Provider Packages
+
+Providers are separate packages under `packages/providers/` for modularity:
+
+<Accordion title="LLM Providers">
+  - `@llamaindex/openai` - OpenAI GPT models
+  - `@llamaindex/anthropic` - Anthropic Claude
+  - `@llamaindex/ollama` - Local Ollama models
+  - `@llamaindex/google` - Google Gemini
+  - `@llamaindex/groq` - Groq inference
+  - `@llamaindex/mistral` - Mistral AI
+  - And many more...
+</Accordion>
+
+<Accordion title="Vector Store Providers">
+  - `@llamaindex/pinecone` - Pinecone vector database
+  - `@llamaindex/qdrant` - Qdrant vector store
+  - `@llamaindex/chroma` - ChromaDB
+  - `@llamaindex/weaviate` - Weaviate
+  - `@llamaindex/postgres` - PostgreSQL with pgvector
+</Accordion>
+
+<Accordion title="Reader Providers">
+  - `@llamaindex/notion` - Notion workspace reader
+  - `@llamaindex/discord` - Discord message reader
+  - `@llamaindex/assemblyai` - Audio transcription
+</Accordion>
+
+## Abstract Base Classes and Provider Pattern
+
+LlamaIndex.TS uses **abstract base classes** to define interfaces that providers implement:
+
+### LLM Provider Pattern
+
+```typescript From @llamaindex/core/llms
+abstract class BaseLLM {
+  abstract chat(params: ChatParams): Promise<ChatResponse>;
+  abstract complete(params: CompleteParams): Promise<CompletionResponse>;
+  abstract metadata: LLMMetadata;
+}
+```
+
+Providers extend these base classes:
+
+```typescript Provider implementation
+import { BaseLLM } from "@llamaindex/core/llms";
+
+export class OpenAI extends BaseLLM {
+  async chat(params: ChatParams): Promise<ChatResponse> {
+    // OpenAI-specific implementation
+  }
+  
+  async complete(params: CompleteParams): Promise<CompletionResponse> {
+    // OpenAI-specific implementation
+  }
+  
+  get metadata(): LLMMetadata {
+    return {
+      model: "gpt-4",
+      temperature: 0.7,
+      // ...
+    };
+  }
+}
+```
+
+### Embedding Provider Pattern
+
+```typescript From @llamaindex/core/embeddings
+abstract class BaseEmbedding {
+  abstract getTextEmbedding(text: string): Promise<number[]>;
+  abstract getQueryEmbedding(query: string): Promise<number[]>;
+}
+```
+
+### Vector Store Provider Pattern
+
+```typescript From @llamaindex/core/vector-store
+abstract class BaseVectorStore {
+  abstract add(nodes: BaseNode[]): Promise<string[]>;
+  abstract delete(refDocId: string): Promise<void>;
+  abstract query(params: VectorStoreQueryParams): Promise<VectorStoreQueryResult>;
+  
+  storesText: boolean = false;
+  embedModel?: BaseEmbedding;
+}
+```
+
+<Info>
+This pattern allows you to **swap providers without changing application code** - just change the Settings configuration.
+</Info>
+
+## How Packages Work Together
+
+```mermaid
+graph TD
+    A[Your Application] --> B[llamaindex]
+    B --> C[@llamaindex/core]
+    B --> D[@llamaindex/env]
+    A --> E[@llamaindex/openai]
+    E --> C
+    A --> F[@llamaindex/pinecone]
+    F --> C
+    
+    C --> G[Abstract Base Classes]
+    E --> H[LLM Implementation]
+    F --> I[Vector Store Implementation]
+```
+
+### Example: Full Stack
+
+```typescript Real-world usage
+import { Settings } from "llamaindex";
+import { OpenAI } from "@llamaindex/openai";
+import { OpenAIEmbedding } from "@llamaindex/openai";
+import { PineconeVectorStore } from "@llamaindex/pinecone";
+import { VectorStoreIndex } from "llamaindex/indices";
+
+// Configure providers via Settings
+Settings.llm = new OpenAI({ model: "gpt-4", apiKey: process.env.OPENAI_API_KEY });
+Settings.embedModel = new OpenAIEmbedding({ apiKey: process.env.OPENAI_API_KEY });
+
+// Use concrete implementations
+const vectorStore = new PineconeVectorStore({
+  apiKey: process.env.PINECONE_API_KEY,
+  indexName: "my-index",
+});
+
+// Index uses Settings and vectorStore together
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  vectorStores: { TEXT: vectorStore },
+});
+```
+
+## Package Dependencies
+
+The dependency flow ensures runtime compatibility:
+
+<Steps>
+  <Step title="Core Package">
+    Depends only on `@llamaindex/env` for runtime abstraction
+  </Step>
+  <Step title="Main Package">
+    Depends on `@llamaindex/core` and `@llamaindex/env`
+  </Step>
+  <Step title="Provider Packages">
+    Depend on `@llamaindex/core` for base classes and types
+  </Step>
+</Steps>
+
+```json Package dependency example
+// @llamaindex/openai/package.json
+{
+  "dependencies": {
+    "@llamaindex/core": "workspace:*",
+    "@llamaindex/env": "workspace:*",
+    "openai": "^4.0.0"
+  }
+}
+```
+
+## Modular Design Benefits
+
+<CardGroup cols={2}>
+  <Card title="Tree-Shaking" icon="tree">
+    Only bundle what you import - sub-module exports enable optimal bundle sizes
+  </Card>
+  <Card title="Provider Flexibility" icon="arrows-rotate">
+    Swap LLMs, embeddings, or vector stores with minimal code changes
+  </Card>
+  <Card title="Runtime Agnostic" icon="server">
+    Core abstractions work across Node.js, Deno, Bun, and edge runtimes
+  </Card>
+  <Card title="Independent Releases" icon="rocket">
+    Provider packages can be updated independently from core
+  </Card>
+</CardGroup>
+
+## Build System
+
+All packages use **bunchee** for building with dual CJS/ESM support:
+
+```bash Build output structure
+packages/core/
+├── agent/dist/
+│   ├── index.js      # ESM
+│   ├── index.cjs     # CommonJS
+│   └── index.d.ts    # Types
+├── llms/dist/
+├── embeddings/dist/
+└── ...
+```
+
+<Warning>
+Always run `pnpm build` before testing, as tests depend on build artifacts.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Multi-Runtime Support" icon="globe" href="/core/multi-runtime">
+    Learn how LlamaIndex.TS works across different JavaScript runtimes
+  </Card>
+  <Card title="Settings Configuration" icon="gear" href="/core/settings">
+    Configure global LLM, embeddings, and other settings
+  </Card>
+</CardGroup>

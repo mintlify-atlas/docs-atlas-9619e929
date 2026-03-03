@@ -1,0 +1,474 @@
+---
+title: Data Readers
+description: Load documents from files, APIs, and external sources
+---
+
+Readers ingest data from various sources and convert it into `Document` objects that LlamaIndex can process. LlamaIndex.TS provides built-in readers for common file formats and integrations.
+
+## Overview
+
+Readers implement the `BaseReader` interface:
+
+```typescript
+interface BaseReader {
+  loadData(...args: unknown[]): Promise<Document[]>;
+}
+```
+
+All readers convert their input format into one or more `Document` objects with text content and metadata.
+
+## File Readers
+
+### SimpleDirectoryReader
+
+Load multiple file types from a directory:
+
+```typescript
+import { SimpleDirectoryReader } from "@llamaindex/readers/directory";
+
+const reader = new SimpleDirectoryReader();
+const documents = await reader.loadData("./data");
+
+console.log(`Loaded ${documents.length} documents`);
+```
+
+**Supported formats**: TXT, PDF, CSV, Markdown, DOCX, HTML, JPG/PNG/GIF, XML
+
+### Custom File Extensions
+
+```typescript
+import { SimpleDirectoryReader } from "@llamaindex/readers/directory";
+import { JSONReader } from "@llamaindex/readers/json";
+
+const reader = new SimpleDirectoryReader();
+const documents = await reader.loadData({
+  directoryPath: "./data",
+  fileExtToReader: {
+    json: new JSONReader(),
+    // Add custom readers for other extensions
+  }
+});
+```
+
+### PDF Reader
+
+```typescript
+import { PDFReader } from "@llamaindex/readers/pdf";
+
+const reader = new PDFReader();
+const documents = await reader.loadData("document.pdf");
+
+// Each page becomes a separate document
+for (const doc of documents) {
+  console.log(doc.metadata.page_number);
+}
+```
+
+### DOCX Reader
+
+```typescript
+import { DocxReader } from "@llamaindex/readers/docx";
+
+const reader = new DocxReader();
+const documents = await reader.loadData("document.docx");
+```
+
+### CSV Reader
+
+```typescript
+import { CSVReader } from "@llamaindex/readers/csv";
+
+// Concatenate all rows into one document
+const reader = new CSVReader(
+  true,      // concatRows
+  ", ",      // colJoiner
+  "\n"       // rowJoiner
+);
+
+const documents = await reader.loadData("data.csv");
+
+// Or create one document per row
+const rowReader = new CSVReader(false);
+const rowDocuments = await rowReader.loadData("data.csv");
+```
+
+### Markdown Reader
+
+```typescript
+import { MarkdownReader } from "@llamaindex/readers/markdown";
+
+const reader = new MarkdownReader(
+  true,  // removeHyperlinks
+  true   // removeImages
+);
+
+const documents = await reader.loadData("README.md");
+
+// Documents are split by headers
+for (const doc of documents) {
+  console.log(doc.text);
+}
+```
+
+### HTML Reader
+
+```typescript
+import { HTMLReader } from "@llamaindex/readers/html";
+
+const reader = new HTMLReader();
+const documents = await reader.loadData("page.html");
+```
+
+### JSON Reader
+
+```typescript
+import { JSONReader } from "@llamaindex/readers/json";
+
+const reader = new JSONReader();
+const documents = await reader.loadData("data.json");
+```
+
+### Image Reader
+
+```typescript
+import { ImageReader } from "@llamaindex/readers/image";
+
+const reader = new ImageReader();
+const imageDocuments = await reader.loadData("photo.jpg");
+
+// Creates ImageDocument with image blob
+```
+
+### Text File Reader
+
+```typescript
+import { TextFileReader } from "@llamaindex/readers/text";
+
+const reader = new TextFileReader();
+const documents = await reader.loadData("file.txt");
+```
+
+### XML Reader
+
+```typescript
+import { XMLReader } from "@llamaindex/readers/xml";
+
+const reader = new XMLReader();
+const documents = await reader.loadData("data.xml");
+```
+
+## LlamaParse
+
+LlamaParse is a premium document parsing service that handles complex layouts, tables, and figures:
+
+```typescript
+import { LlamaParseReader } from "llamaindex";
+
+const reader = new LlamaParseReader({
+  apiKey: process.env.LLAMA_CLOUD_API_KEY,
+  resultType: "markdown",  // or "text"
+  language: "en"
+});
+
+const documents = await reader.loadData("complex-document.pdf");
+```
+
+### Features
+
+- **Advanced PDF parsing**: Tables, charts, multi-column layouts
+- **Image extraction**: Embedded images and figures
+- **Format preservation**: Maintains document structure
+- **Multiple formats**: PDF, DOCX, PPTX, and more
+
+### Configuration
+
+```typescript
+const reader = new LlamaParseReader({
+  apiKey: process.env.LLAMA_CLOUD_API_KEY,
+  resultType: "markdown",
+  numWorkers: 4,
+  verbose: true,
+  language: "en",
+  // Advanced options
+  parsingInstructions: "Focus on extracting tables",
+  skipDiagonalText: false,
+  invalidateCache: false,
+  doNotCache: false,
+  fastMode: false
+});
+```
+
+## Platform Integrations
+
+### Notion Reader
+
+```typescript
+import { NotionReader } from "@llamaindex/notion";
+
+const reader = new NotionReader({
+  auth: process.env.NOTION_TOKEN
+});
+
+const documents = await reader.loadData({
+  databaseId: "your-database-id"
+});
+```
+
+### Discord Reader
+
+```typescript
+import { DiscordReader } from "@llamaindex/discord";
+
+const reader = new DiscordReader({
+  token: process.env.DISCORD_TOKEN
+});
+
+const documents = await reader.loadData({
+  channelId: "channel-id",
+  limit: 100
+});
+```
+
+### AssemblyAI Reader
+
+Transcribe audio/video files:
+
+```typescript
+import { AssemblyAIReader } from "@llamaindex/assemblyai";
+
+const reader = new AssemblyAIReader({
+  apiKey: process.env.ASSEMBLYAI_API_KEY
+});
+
+const documents = await reader.loadData("podcast.mp3");
+```
+
+## Loading from URLs
+
+Many readers support loading from HTTP/HTTPS URLs:
+
+```typescript
+import { PDFReader } from "@llamaindex/readers/pdf";
+
+const reader = new PDFReader();
+const documents = await reader.loadData(
+  "https://example.com/document.pdf"
+);
+```
+
+## Custom Readers
+
+Create your own reader by implementing `BaseReader`:
+
+```typescript
+import { BaseReader, Document } from "llamaindex";
+
+class CustomAPIReader implements BaseReader {
+  constructor(private apiKey: string) {}
+  
+  async loadData(endpoint: string): Promise<Document[]> {
+    // Fetch data from your API
+    const response = await fetch(endpoint, {
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`
+      }
+    });
+    
+    const data = await response.json();
+    
+    // Convert to Documents
+    return data.items.map((item: any) => 
+      new Document({
+        text: item.content,
+        metadata: {
+          id: item.id,
+          title: item.title,
+          date: item.created_at
+        }
+      })
+    );
+  }
+}
+
+const reader = new CustomAPIReader(process.env.API_KEY!);
+const documents = await reader.loadData("https://api.example.com/items");
+```
+
+### Extending FileReader
+
+For file-based readers, extend `FileReader`:
+
+```typescript
+import { FileReader, Document } from "@llamaindex/core/schema";
+
+class CustomFileReader extends FileReader {
+  async loadDataAsContent(
+    fileContent: Uint8Array,
+    filename?: string
+  ): Promise<Document[]> {
+    // Parse file content
+    const text = new TextDecoder().decode(fileContent);
+    
+    // Custom parsing logic
+    const sections = this.parseCustomFormat(text);
+    
+    // Return documents
+    return sections.map(section => 
+      new Document({
+        text: section.content,
+        metadata: {
+          filename,
+          section: section.name
+        }
+      })
+    );
+  }
+  
+  private parseCustomFormat(text: string) {
+    // Your parsing logic
+    return [];
+  }
+}
+
+const reader = new CustomFileReader();
+const documents = await reader.loadData("file.custom");
+```
+
+## Complete Example
+
+```typescript
+import { 
+  VectorStoreIndex,
+  IngestionPipeline,
+  SentenceSplitter
+} from "llamaindex";
+import { SimpleDirectoryReader } from "@llamaindex/readers/directory";
+import { OpenAIEmbedding } from "@llamaindex/openai";
+import { PDFReader } from "@llamaindex/readers/pdf";
+import { MarkdownReader } from "@llamaindex/readers/markdown";
+
+async function main() {
+  // Load documents from directory
+  const reader = new SimpleDirectoryReader();
+  const documents = await reader.loadData({
+    directoryPath: "./data",
+    fileExtToReader: {
+      pdf: new PDFReader(),
+      md: new MarkdownReader()
+    }
+  });
+  
+  console.log(`Loaded ${documents.length} documents`);
+  
+  // Inspect documents
+  for (const doc of documents.slice(0, 3)) {
+    console.log("File:", doc.metadata.file_name);
+    console.log("Preview:", doc.text.substring(0, 100));
+  }
+  
+  // Process with pipeline
+  const pipeline = new IngestionPipeline({
+    transformations: [
+      new SentenceSplitter({ chunkSize: 1024 }),
+      new OpenAIEmbedding()
+    ]
+  });
+  
+  const nodes = await pipeline.run({ documents });
+  
+  // Create index
+  const index = await VectorStoreIndex.init({ nodes });
+  
+  // Query
+  const queryEngine = index.asQueryEngine();
+  const response = await queryEngine.query({
+    query: "What are the main topics across all documents?"
+  });
+  
+  console.log(response.toString());
+}
+
+main().catch(console.error);
+```
+
+## Available Reader Packages
+
+<CardGroup cols={2}>
+  <Card title="Core Readers" icon="file">
+    `@llamaindex/readers`
+    
+    - SimpleDirectoryReader
+    - PDFReader
+    - CSVReader
+    - MarkdownReader
+    - DocxReader
+    - HTMLReader
+    - JSONReader
+    - ImageReader
+    - TextFileReader
+    - XMLReader
+  </Card>
+  
+  <Card title="Platform Integrations" icon="plug">
+    - `@llamaindex/notion` - Notion databases
+    - `@llamaindex/discord` - Discord channels
+    - `@llamaindex/assemblyai` - Audio/video transcription
+  </Card>
+  
+  <Card title="Premium Services" icon="stars">
+    - LlamaParse - Advanced document parsing
+    - LlamaCloud - Managed data ingestion
+  </Card>
+  
+  <Card title="Community" icon="users">
+    Check the LlamaIndex Hub for community-contributed readers:
+    - Web scrapers
+    - Database connectors
+    - API integrations
+    - And more
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+1. **Choose the right reader**
+   - Use format-specific readers for better parsing
+   - LlamaParse for complex PDFs with tables
+   - SimpleDirectoryReader for mixed formats
+
+2. **Handle metadata**
+   - Readers automatically add file paths and names
+   - Preserve source information for citations
+   - Add custom metadata after loading
+
+3. **Process in batches**
+   - Load files in chunks for large datasets
+   - Monitor memory usage
+   - Use streaming when possible
+
+4. **Error handling**
+   - Catch and log file-specific errors
+   - Continue processing other files on failure
+   - Validate file formats before reading
+
+5. **Combine with pipelines**
+   - Use readers with IngestionPipeline
+   - Chain transformations after reading
+   - Cache results for repeated access
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Documents" icon="file-lines" href="/data/documents">
+    Work with Document objects
+  </Card>
+  <Card title="Ingestion" icon="database" href="/data/ingestion">
+    Build data processing pipelines
+  </Card>
+  <Card title="Node Parsers" icon="scissors" href="/data/node-parsers">
+    Split documents into chunks
+  </Card>
+  <Card title="LlamaParse" icon="sparkles" href="/integrations/llamaparse">
+    Advanced document parsing
+  </Card>
+</CardGroup>

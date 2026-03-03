@@ -1,0 +1,257 @@
+---
+title: Vector Store Retrievers
+description: Using VectorStoreIndex retrievers for similarity search and document retrieval
+---
+
+Vector store retrievers enable similarity-based document retrieval using vector embeddings. The `VectorIndexRetriever` searches for the most semantically similar nodes to your query.
+
+## VectorStoreRetriever
+
+The `VectorIndexRetriever` is created from a `VectorStoreIndex` and performs similarity search using embeddings:
+
+```typescript
+import { VectorStoreIndex, Document } from "llamaindex";
+
+const documents = [
+  new Document({ text: "LlamaIndex is a data framework for LLMs" }),
+  new Document({ text: "Vector stores enable semantic search" }),
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+const retriever = index.asRetriever();
+
+const results = await retriever.retrieve({
+  query: "What is LlamaIndex?"
+});
+
+results.forEach((result) => {
+  console.log(`Score: ${result.score}`);
+  console.log(`Text: ${result.node.getText()}`);
+});
+```
+
+## Similarity Search
+
+Vector store retrievers use cosine similarity (or other distance metrics) to find the most relevant documents:
+
+```typescript
+import { VectorStoreIndex } from "llamaindex";
+import { OpenAIEmbedding } from "@llamaindex/openai";
+import { Settings } from "llamaindex";
+
+// Configure embedding model
+Settings.embedModel = new OpenAIEmbedding();
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+
+// Retrieve top-k most similar nodes
+const retriever = index.asRetriever({
+  similarityTopK: 5, // Return top 5 results
+});
+
+const nodes = await retriever.retrieve({ 
+  query: "machine learning concepts"
+});
+```
+
+## Top-k Retrieval
+
+Control the number of results returned with the `similarityTopK` parameter:
+
+```typescript
+// Retrieve top 3 results
+const retriever = index.asRetriever({
+  similarityTopK: 3,
+});
+
+// Or configure at query engine level
+const queryEngine = index.asQueryEngine({
+  similarityTopK: 10,
+});
+```
+
+**Default Value**: `DEFAULT_SIMILARITY_TOP_K = 2`
+
+## Filters and Metadata
+
+Filter results based on metadata to narrow your search:
+
+```typescript
+import { Document, MetadataFilters } from "llamaindex";
+
+// Create documents with metadata
+const docs = [
+  new Document({ 
+    text: "The dog is brown", 
+    metadata: { category: "animals", color: "brown" } 
+  }),
+  new Document({ 
+    text: "The cat is yellow", 
+    metadata: { category: "animals", color: "yellow" } 
+  }),
+  new Document({ 
+    text: "The car is red", 
+    metadata: { category: "vehicles", color: "red" } 
+  }),
+];
+
+const index = await VectorStoreIndex.fromDocuments(docs);
+
+// Filter by metadata
+const filters: MetadataFilters = {
+  filters: [
+    { key: "category", value: "animals", operator: "==" },
+  ],
+};
+
+const retriever = index.asRetriever({ 
+  similarityTopK: 3, 
+  filters 
+});
+
+const results = await retriever.retrieve({ 
+  query: "What color is it?" 
+});
+```
+
+### Filter Operators
+
+Supported filter operators:
+
+- `==` - Equal to (default)
+- `!=` - Not equal to
+- `>`, `<` - Greater/less than (numbers)
+- `>=`, `<=` - Greater/less than or equal (numbers)
+- `in` - Value in array
+- `nin` - Value not in array
+- `any` - Contains any (array fields)
+- `all` - Contains all (array fields)
+- `text_match` - Full text match
+- `contains` - Array contains value
+- `is_empty` - Field is empty or doesn't exist
+
+### Multiple Filters
+
+Combine filters with `AND` or `OR` conditions:
+
+```typescript
+const filters: MetadataFilters = {
+  filters: [
+    { key: "category", value: "animals", operator: "==" },
+    { key: "color", value: ["brown", "yellow"], operator: "in" },
+  ],
+  condition: "and", // Default is "and"
+};
+
+// OR condition
+const orFilters: MetadataFilters = {
+  filters: [
+    { key: "category", value: "animals", operator: "==" },
+    { key: "category", value: "vehicles", operator: "==" },
+  ],
+  condition: "or",
+};
+```
+
+## Query Modes
+
+Different query modes for specialized retrieval:
+
+```typescript
+import { VectorStoreQueryMode } from "@llamaindex/core/vector-store";
+
+const retriever = index.asRetriever({
+  similarityTopK: 5,
+  mode: VectorStoreQueryMode.DEFAULT, // Default similarity search
+});
+
+// Hybrid search (if supported by vector store)
+const hybridRetriever = index.asRetriever({
+  similarityTopK: 5,
+  mode: VectorStoreQueryMode.HYBRID,
+});
+
+// MMR (Maximum Marginal Relevance) for diversity
+const mmrRetriever = index.asRetriever({
+  similarityTopK: 5,
+  mode: VectorStoreQueryMode.MMR,
+});
+```
+
+## Complete Example
+
+```typescript
+import { Document, VectorStoreIndex, MetadataFilters } from "llamaindex";
+import { OpenAIEmbedding } from "@llamaindex/openai";
+import { Settings } from "llamaindex";
+
+Settings.embedModel = new OpenAIEmbedding();
+
+async function main() {
+  // Create documents with metadata
+  const documents = [
+    new Document({ 
+      text: "LlamaIndex provides a simple interface for LLM applications",
+      metadata: { topic: "overview", difficulty: "beginner" }
+    }),
+    new Document({ 
+      text: "Vector stores enable efficient similarity search over embeddings",
+      metadata: { topic: "vector-stores", difficulty: "intermediate" }
+    }),
+    new Document({ 
+      text: "Advanced retrieval techniques include hybrid search and reranking",
+      metadata: { topic: "retrieval", difficulty: "advanced" }
+    }),
+  ];
+
+  // Build index
+  const index = await VectorStoreIndex.fromDocuments(documents);
+
+  // Create retriever with filters
+  const filters: MetadataFilters = {
+    filters: [
+      { key: "difficulty", value: ["beginner", "intermediate"], operator: "in" },
+    ],
+  };
+
+  const retriever = index.asRetriever({
+    similarityTopK: 2,
+    filters,
+  });
+
+  // Retrieve relevant nodes
+  const results = await retriever.retrieve({ 
+    query: "How do I build LLM applications?" 
+  });
+
+  // Display results
+  results.forEach((result, idx) => {
+    console.log(`\nResult ${idx + 1}:`);
+    console.log(`Score: ${result.score?.toFixed(4)}`);
+    console.log(`Text: ${result.node.getText()}`);
+    console.log(`Metadata:`, result.node.metadata);
+  });
+}
+
+main().catch(console.error);
+```
+
+## Custom Parameters
+
+Pass provider-specific parameters through `customParams`:
+
+```typescript
+const retriever = index.asRetriever({
+  similarityTopK: 5,
+  customParams: {
+    // Vector store specific parameters
+    searchParams: { ef: 100 }, // Example for HNSW
+  },
+});
+```
+
+## Related Resources
+
+- [Retrieval Modes](/retrievers/retriever-modes) - Different retrieval strategies
+- [VectorStoreIndex](/indices/vector-index) - Building and managing vector indices
+- [Postprocessors](/advanced/postprocessors) - Reranking and filtering results

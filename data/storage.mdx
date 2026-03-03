@@ -1,0 +1,476 @@
+---
+title: Storage Systems
+description: Persist and manage documents, indices, chat history, and key-value data
+---
+
+LlamaIndex.TS provides storage abstractions for persisting different types of data. Storage systems enable caching, state management, and efficient data retrieval across sessions.
+
+## Storage Types
+
+LlamaIndex uses specialized stores for different data types:
+
+- **Document Stores**: Store and manage source documents and nodes
+- **Index Stores**: Persist index structures and metadata
+- **Vector Stores**: Store embeddings for semantic search
+- **Chat Stores**: Manage conversation history
+- **KV Stores**: General key-value storage
+
+## Document Stores
+
+Document stores manage your source documents and nodes with deduplication and versioning.
+
+### SimpleDocumentStore
+
+```typescript
+import { SimpleDocumentStore } from "llamaindex/storage";
+import { Document } from "llamaindex";
+
+// Create a document store
+const docStore = new SimpleDocumentStore();
+
+// Add documents
+const doc = new Document({ 
+  text: "Content here", 
+  id_: "doc_1" 
+});
+
+await docStore.addDocuments([doc], false);
+
+// Retrieve document
+const retrieved = await docStore.getDocument("doc_1", false);
+
+// Check existence
+const exists = await docStore.documentExists("doc_1");
+
+// Get all documents
+const allDocs = await docStore.docs();
+
+// Delete document
+await docStore.deleteDocument("doc_1", false);
+```
+
+### Persistence
+
+```typescript
+import { SimpleDocumentStore } from "llamaindex/storage";
+
+const docStore = new SimpleDocumentStore();
+
+// Add documents
+await docStore.addDocuments([doc1, doc2]);
+
+// Persist to disk
+await docStore.persist("./storage/docstore.json");
+
+// Load from disk
+const loadedStore = await SimpleDocumentStore.fromPersistPath(
+  "./storage/docstore.json"
+);
+```
+
+### Document Hashing
+
+Track document changes with hashes:
+
+```typescript
+// Set document hash
+await docStore.setDocumentHash("doc_1", doc.hash);
+
+// Get document hash
+const hash = await docStore.getDocumentHash("doc_1");
+
+// Get all hashes
+const allHashes = await docStore.getAllDocumentHashes();
+
+// Check if document changed
+if (hash !== doc.hash) {
+  console.log("Document has been modified");
+}
+```
+
+### Reference Document Info
+
+```typescript
+// Get ref doc info (tracks which nodes belong to a document)
+const refInfo = await docStore.getRefDocInfo("doc_1");
+
+// Contains:
+// - nodeIds: string[] - IDs of nodes derived from this doc
+// - extraInfo: Record<string, any> - Additional metadata
+
+// Get all ref doc info
+const allRefInfo = await docStore.getAllRefDocInfo();
+```
+
+## Index Stores
+
+Index stores persist index structures for quick loading.
+
+### SimpleIndexStore
+
+```typescript
+import { SimpleIndexStore } from "llamaindex/storage";
+
+const indexStore = new SimpleIndexStore();
+
+// Add index structure
+await indexStore.addIndexStruct(indexStruct);
+
+// Get index structure
+const struct = await indexStore.getIndexStruct("struct_id");
+
+// Get all structures
+const allStructs = await indexStore.getIndexStructs();
+
+// Delete structure
+await indexStore.deleteIndexStruct("struct_id");
+```
+
+### Persistence
+
+```typescript
+// Persist to disk
+await indexStore.persist("./storage/index_store.json");
+
+// Load from disk
+const loadedStore = await SimpleIndexStore.fromPersistPath(
+  "./storage/index_store.json"
+);
+
+// Or from directory
+const dirStore = await SimpleIndexStore.fromPersistDir(
+  "./storage"
+);
+```
+
+## Vector Stores
+
+Vector stores persist embeddings for semantic search. See [Vector Stores](/data/storage) for detailed documentation.
+
+```typescript
+import { VectorStoreIndex } from "llamaindex";
+import { PineconeVectorStore } from "@llamaindex/pinecone";
+
+const vectorStore = new PineconeVectorStore({
+  indexName: "my-index"
+});
+
+const index = await VectorStoreIndex.fromVectorStore(vectorStore);
+```
+
+## Chat Stores
+
+Chat stores manage conversation history for chat engines.
+
+### SimpleChatStore
+
+```typescript
+import { SimpleChatStore } from "llamaindex/storage";
+import { ChatMessage } from "llamaindex";
+
+const chatStore = new SimpleChatStore();
+
+// Store a message
+const message = ChatMessage.user("Hello!");
+await chatStore.setMessages("conversation_1", [message]);
+
+// Get messages
+const messages = await chatStore.getMessages("conversation_1");
+
+// Add message to existing conversation
+await chatStore.addMessage("conversation_1", 
+  ChatMessage.assistant("Hi there!")
+);
+
+// Delete conversation
+await chatStore.deleteMessages("conversation_1");
+
+// Get all keys
+const keys = await chatStore.getAllKeys();
+```
+
+### Persistence
+
+```typescript
+// Persist chat history
+await chatStore.persist("./storage/chat_store.json");
+
+// Load chat history
+const loadedChatStore = await SimpleChatStore.fromPersistPath(
+  "./storage/chat_store.json"
+);
+```
+
+### With Chat Engine
+
+```typescript
+import { ContextChatEngine } from "llamaindex";
+import { SimpleChatStore } from "llamaindex/storage";
+
+const chatStore = new SimpleChatStore();
+
+const chatEngine = new ContextChatEngine({
+  retriever,
+  chatHistory: await chatStore.getMessages("session_123")
+});
+
+// Chat will use persisted history
+const response = await chatEngine.chat({ message: "Continue our discussion" });
+
+// Update store
+await chatStore.addMessage("session_123", response.message);
+await chatStore.persist();
+```
+
+## KV Stores
+
+Key-value stores provide general-purpose persistence.
+
+### SimpleKVStore
+
+```typescript
+import { SimpleKVStore } from "llamaindex/storage";
+
+const kvStore = new SimpleKVStore();
+
+// Put value
+await kvStore.put("key1", { data: "value" }, "collection1");
+
+// Get value
+const value = await kvStore.get("key1", "collection1");
+
+// Get all values in collection
+const allValues = await kvStore.getAll("collection1");
+
+// Delete value
+await kvStore.delete("key1", "collection1");
+```
+
+### Persistence
+
+```typescript
+const kvStore = new SimpleKVStore();
+
+// Add data
+await kvStore.put("config", { theme: "dark" });
+
+// Persist
+await kvStore.persist("./storage/kv_store.json");
+
+// Load from file
+const loadedKV = await SimpleKVStore.fromPersistPath(
+  "./storage/kv_store.json"
+);
+```
+
+### Collections
+
+Organize data with collections:
+
+```typescript
+// Different collections for different data types
+await kvStore.put("user_1", userData, "users");
+await kvStore.put("session_1", sessionData, "sessions");
+await kvStore.put("cache_1", cacheData, "cache");
+
+// Retrieve from specific collection
+const user = await kvStore.get("user_1", "users");
+const allUsers = await kvStore.getAll("users");
+```
+
+## Storage Context
+
+Combine multiple stores for complete state management:
+
+```typescript
+import { 
+  StorageContext,
+  VectorStoreIndex
+} from "llamaindex";
+import { 
+  SimpleDocumentStore,
+  SimpleIndexStore,
+  SimpleChatStore
+} from "llamaindex/storage";
+
+const storageContext = await StorageContext.fromDefaults({
+  docStore: new SimpleDocumentStore(),
+  indexStore: new SimpleIndexStore(),
+  vectorStore: vectorStore,
+  persistDir: "./storage"
+});
+
+const index = await VectorStoreIndex.fromDocuments(
+  documents,
+  { storageContext }
+);
+
+// All stores are automatically persisted
+```
+
+## Complete Example
+
+```typescript
+import { 
+  Document,
+  VectorStoreIndex,
+  IngestionPipeline,
+  SentenceSplitter,
+  StorageContext,
+  DocStoreStrategy
+} from "llamaindex";
+import { OpenAIEmbedding } from "@llamaindex/openai";
+import { 
+  SimpleDocumentStore,
+  SimpleIndexStore,
+  SimpleChatStore
+} from "llamaindex/storage";
+import { PineconeVectorStore } from "@llamaindex/pinecone";
+import fs from "fs/promises";
+
+async function main() {
+  const persistDir = "./storage";
+  
+  // Set up storage
+  const docStore = await SimpleDocumentStore.fromPersistPath(
+    `${persistDir}/docstore.json`
+  );
+  
+  const indexStore = await SimpleIndexStore.fromPersistPath(
+    `${persistDir}/index_store.json`
+  );
+  
+  const vectorStore = new PineconeVectorStore({
+    indexName: "my-index"
+  });
+  
+  const chatStore = await SimpleChatStore.fromPersistPath(
+    `${persistDir}/chat_store.json`
+  );
+  
+  // Create documents
+  const text = await fs.readFile("document.txt", "utf-8");
+  const document = new Document({ 
+    text, 
+    id_: "doc_1" 
+  });
+  
+  // Check if already processed
+  const docHash = document.hash;
+  const storedHash = await docStore.getDocumentHash("doc_1");
+  
+  if (docHash === storedHash) {
+    console.log("Document unchanged, using cached version");
+  } else {
+    console.log("Processing document...");
+    
+    // Process with pipeline
+    const pipeline = new IngestionPipeline({
+      transformations: [
+        new SentenceSplitter({ chunkSize: 1024 }),
+        new OpenAIEmbedding()
+      ],
+      vectorStore,
+      docStore,
+      docStoreStrategy: DocStoreStrategy.UPSERTS
+    });
+    
+    await pipeline.run({ documents: [document] });
+    
+    // Update hash
+    await docStore.setDocumentHash("doc_1", docHash);
+    await docStore.persist(`${persistDir}/docstore.json`);
+  }
+  
+  // Create index from vector store
+  const storageContext = await StorageContext.fromDefaults({
+    docStore,
+    indexStore,
+    vectorStore,
+    persistDir
+  });
+  
+  const index = await VectorStoreIndex.fromVectorStore(
+    vectorStore,
+    { storageContext }
+  );
+  
+  // Create chat engine with history
+  const sessionId = "user_session_123";
+  const chatHistory = await chatStore.getMessages(sessionId) || [];
+  
+  const chatEngine = index.asChatEngine({
+    chatHistory
+  });
+  
+  // Chat
+  const response = await chatEngine.chat({
+    message: "What does the document say?"
+  });
+  
+  console.log(response.toString());
+  
+  // Save chat history
+  await chatStore.addMessage(sessionId, response.message);
+  await chatStore.persist(`${persistDir}/chat_store.json`);
+  
+  // Persist index
+  await indexStore.persist(`${persistDir}/index_store.json`);
+}
+
+main().catch(console.error);
+```
+
+## Best Practices
+
+1. **Use document hashing**
+   - Track document changes efficiently
+   - Avoid reprocessing unchanged content
+   - Enable incremental updates
+
+2. **Organize storage**
+   - Use consistent directory structure
+   - Separate different store types
+   - Version your storage format
+
+3. **Handle persistence errors**
+   - Validate file paths before writing
+   - Use atomic writes when possible
+   - Backup before major updates
+
+4. **Manage chat history**
+   - Set retention policies
+   - Limit history size for context windows
+   - Archive old conversations
+
+5. **Choose appropriate stores**
+   - SimpleKVStore for development
+   - Database-backed stores for production
+   - Vector stores for semantic search
+   - Chat stores for conversations
+
+## Advanced Storage
+
+For production applications, consider:
+
+- **Database-backed stores**: PostgreSQL, MongoDB, Redis
+- **Cloud vector stores**: Pinecone, Weaviate, Qdrant
+- **Distributed storage**: For large-scale applications
+- **Custom stores**: Implement `BaseDocumentStore` or `BaseKVStore`
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Vector Stores" icon="database" href="/data/storage">
+    Explore vector storage options
+  </Card>
+  <Card title="Ingestion" icon="download" href="/data/ingestion">
+    Build data processing pipelines
+  </Card>
+  <Card title="Chat Engines" icon="comments" href="/chat-engines/overview">
+    Create conversational interfaces
+  </Card>
+  <Card title="Documents" icon="file-lines" href="/data/documents">
+    Work with Document objects
+  </Card>
+</CardGroup>

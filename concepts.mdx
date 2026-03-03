@@ -1,0 +1,448 @@
+---
+title: Core Concepts
+description: Understanding the fundamental building blocks of LlamaIndex.TS
+---
+
+# Core Concepts
+
+LlamaIndex.TS is built around a few key concepts that work together to enable powerful LLM applications. Understanding these concepts will help you build more effective RAG systems, agents, and workflows.
+
+## Overview
+
+At its core, LlamaIndex.TS helps you:
+
+1. **Load and process** your data into structured formats
+2. **Index** that data for efficient retrieval
+3. **Query** the indexed data using natural language
+4. **Generate** responses using LLMs with relevant context
+
+<Note>
+  All of these components are modular and composable, allowing you to customize every part of the pipeline.
+</Note>
+
+## Documents and Nodes
+
+### Documents
+
+**Documents** are the primary data containers in LlamaIndex.TS. They represent your raw data with metadata.
+
+```typescript
+import { Document } from "llamaindex";
+
+// Create a document from text
+const doc = new Document({
+  text: "LlamaIndex is a data framework for LLM applications.",
+  id_: "doc1",
+});
+
+// Documents can have metadata
+const docWithMetadata = new Document({
+  text: "Annual revenue increased by 25%.",
+  metadata: {
+    year: 2024,
+    source: "financial_report.pdf",
+    page: 5,
+  },
+});
+```
+
+### Nodes
+
+**Nodes** are atomic units of data in LlamaIndex.TS. Documents are split into nodes (chunks) for efficient retrieval.
+
+```typescript
+import { TextNode } from "@llamaindex/core/schema";
+
+const node = new TextNode({
+  text: "This is a chunk of text.",
+  metadata: { source: "doc1" },
+});
+```
+
+<Tip>
+  Nodes are created automatically when you index documents, but you can also create them manually for fine-grained control.
+</Tip>
+
+### Node Parsing
+
+LlamaIndex.TS includes several **node parsers** (text splitters) to chunk your documents:
+
+- **SentenceSplitter**: Splits by sentences while respecting chunk size
+- **SimpleNodeParser**: Basic chunking with overlap
+- **MarkdownNodeParser**: Preserves markdown structure
+- **CodeSplitter**: Language-aware code splitting
+
+```typescript
+import { SentenceSplitter } from "@llamaindex/core/node-parser";
+import { Document } from "llamaindex";
+
+const parser = new SentenceSplitter({
+  chunkSize: 1024,
+  chunkOverlap: 20,
+});
+
+const nodes = parser.getNodesFromDocuments([document]);
+```
+
+## Embeddings
+
+**Embeddings** are vector representations of text that capture semantic meaning. They enable semantic search by measuring similarity between queries and documents.
+
+```typescript
+import { OpenAIEmbedding } from "@llamaindex/openai";
+
+const embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-small",
+});
+
+// Embed a single text
+const embedding = await embedModel.getTextEmbedding(
+  "What is LlamaIndex?"
+);
+
+// embedding is a number array: [0.123, -0.456, ...]
+```
+
+<Note>
+  By default, LlamaIndex.TS uses OpenAI's embedding models, but you can use any provider including local models via Ollama.
+</Note>
+
+## Indices
+
+**Indices** are data structures that organize your nodes for efficient retrieval. The most common is the **VectorStoreIndex**.
+
+### VectorStoreIndex
+
+Stores embeddings for semantic search:
+
+```typescript
+import { VectorStoreIndex, Document } from "llamaindex";
+
+const documents = [
+  new Document({ text: "LlamaIndex supports multiple runtimes." }),
+  new Document({ text: "RAG improves LLM accuracy with your data." }),
+];
+
+// Create index from documents
+const index = await VectorStoreIndex.fromDocuments(documents);
+
+// Add more documents later
+await index.insert(new Document({ text: "New information" }));
+```
+
+### Other Index Types
+
+LlamaIndex.TS provides several index types for different use cases:
+
+- **SummaryIndex**: Sequential scanning of all nodes
+- **KeywordTableIndex**: Keyword-based retrieval
+- **KnowledgeGraphIndex**: Graph-based relationships
+
+```typescript
+import { SummaryIndex } from "llamaindex/indices";
+
+const summaryIndex = await SummaryIndex.fromDocuments(documents);
+```
+
+## Retrieval
+
+**Retrievers** fetch relevant nodes from an index based on a query.
+
+```typescript
+// Create a retriever from an index
+const retriever = index.asRetriever({
+  similarityTopK: 5,  // Return top 5 most similar nodes
+});
+
+// Retrieve relevant nodes
+const results = await retriever.retrieve({
+  query: "What runtimes does LlamaIndex support?",
+});
+
+results.forEach(result => {
+  console.log(result.node.getText());
+  console.log("Score:", result.score);
+});
+```
+
+### Advanced Retrieval
+
+Combine multiple retrieval strategies:
+
+- **Hybrid Search**: Combine semantic and keyword search
+- **Reranking**: Improve results with a reranker model
+- **Metadata Filtering**: Filter by document metadata
+
+```typescript
+import { MetadataFilters } from "@llamaindex/core/schema";
+
+const retriever = index.asRetriever({
+  similarityTopK: 10,
+  filters: new MetadataFilters({
+    filters: [{
+      key: "year",
+      value: 2024,
+      operator: "==",
+    }],
+  }),
+});
+```
+
+## Query Engines
+
+**Query Engines** combine retrieval and response generation to answer questions.
+
+```typescript
+// Create a query engine from an index
+const queryEngine = index.asQueryEngine();
+
+// Query your data
+const response = await queryEngine.query({
+  query: "What is RAG?",
+});
+
+console.log(response.toString());
+```
+
+### Streaming Responses
+
+Stream responses for better UX:
+
+```typescript
+const stream = await queryEngine.query({
+  query: "Explain LlamaIndex",
+  stream: true,
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.response);
+}
+```
+
+## Chat Engines
+
+**Chat Engines** enable multi-turn conversations with context retention.
+
+```typescript
+import { ContextChatEngine } from "llamaindex";
+
+const chatEngine = new ContextChatEngine({
+  retriever,
+  chatHistory: [],  // Optional: provide existing history
+});
+
+// First message
+const response1 = await chatEngine.chat({
+  message: "What is LlamaIndex?",
+});
+
+// Follow-up (context is maintained)
+const response2 = await chatEngine.chat({
+  message: "What runtimes does it support?",
+});
+```
+
+### Chat Engine Types
+
+Different chat engines for different use cases:
+
+- **ContextChatEngine**: Retrieves context for each message
+- **SimpleChatEngine**: Direct chat without retrieval
+- **CondensePlusContextChatEngine**: Condenses chat history before retrieval
+
+## LLMs (Large Language Models)
+
+**LLMs** generate the final responses in your application. LlamaIndex.TS supports multiple providers.
+
+```typescript
+import { OpenAI } from "@llamaindex/openai";
+import { Settings } from "llamaindex";
+
+// Configure the default LLM globally
+Settings.llm = new OpenAI({
+  model: "gpt-4o",
+  temperature: 0.1,
+});
+
+// Or use directly
+const llm = new OpenAI({ model: "gpt-4o-mini" });
+const response = await llm.chat({
+  messages: [
+    { role: "user", content: "Hello!" },
+  ],
+});
+```
+
+### Switching Providers
+
+Easily switch between LLM providers:
+
+```typescript
+import { claude } from "@llamaindex/anthropic";
+import { Gemini } from "@llamaindex/gemini";
+
+// Use Anthropic
+Settings.llm = claude({ model: "claude-3-5-sonnet-20241022" });
+
+// Or Google Gemini
+Settings.llm = new Gemini({ model: "gemini-pro" });
+```
+
+## RAG (Retrieval-Augmented Generation)
+
+**RAG** is the core pattern that combines retrieval with generation. It allows LLMs to answer questions using your data.
+
+### How RAG Works
+
+<Steps>
+  <Step title="Index Your Data">
+    Documents are chunked, embedded, and stored in a vector index.
+  </Step>
+  <Step title="Query Processing">
+    User query is embedded using the same embedding model.
+  </Step>
+  <Step title="Retrieval">
+    Most similar chunks are retrieved based on vector similarity.
+  </Step>
+  <Step title="Context Augmentation">
+    Retrieved chunks are added to the LLM prompt as context.
+  </Step>
+  <Step title="Generation">
+    LLM generates a response using the provided context.
+  </Step>
+</Steps>
+
+### Basic RAG Pipeline
+
+```typescript
+import { VectorStoreIndex, Document } from "llamaindex";
+
+// 1. Index
+const index = await VectorStoreIndex.fromDocuments([
+  new Document({ text: "Your data here" }),
+]);
+
+// 2. Query (retrieval + generation)
+const queryEngine = index.asQueryEngine();
+const response = await queryEngine.query({
+  query: "Your question",
+});
+
+console.log(response.toString());
+```
+
+## Agents and Workflows
+
+For more advanced use cases, **agents** can reason, plan, and use tools to accomplish tasks.
+
+```typescript
+import { agent } from "@llamaindex/workflow";
+import { openai } from "@llamaindex/openai";
+import { tool } from "llamaindex";
+import { z } from "zod";
+
+// Define a tool
+const searchTool = tool({
+  name: "search",
+  description: "Search the web for information",
+  parameters: z.object({
+    query: z.string(),
+  }),
+  execute: async ({ query }) => {
+    // Your search implementation
+    return `Results for: ${query}`;
+  },
+});
+
+// Create an agent
+const myAgent = agent({
+  llm: openai({ model: "gpt-4o" }),
+  tools: [searchTool],
+});
+
+// Run the agent
+const result = await myAgent.run("Find recent news about AI");
+```
+
+<Tip>
+  Agents are powerful for tasks that require multiple steps, external API calls, or decision-making.
+</Tip>
+
+## Settings and Configuration
+
+**Settings** is a global configuration object that controls default behavior:
+
+```typescript
+import { Settings } from "llamaindex";
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+
+// Configure LLM
+Settings.llm = new OpenAI({
+  model: "gpt-4o",
+  temperature: 0.1,
+});
+
+// Configure embeddings
+Settings.embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-small",
+});
+
+// Configure chunking
+Settings.chunkSize = 512;
+Settings.chunkOverlap = 50;
+
+// Configure callbacks for logging
+Settings.callbackManager.on("llm-tool-call", (event) => {
+  console.log("Tool called:", event);
+});
+```
+
+## Vector Stores
+
+For production applications, use a dedicated **vector database** instead of in-memory storage:
+
+```typescript
+import { VectorStoreIndex } from "llamaindex";
+import { PineconeVectorStore } from "@llamaindex/pinecone";
+import { Pinecone } from "@pinecone-database/pinecone";
+
+// Initialize vector store
+const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
+const pineconeIndex = pinecone.Index("my-index");
+const vectorStore = new PineconeVectorStore({ pineconeIndex });
+
+// Create index with vector store
+const index = await VectorStoreIndex.fromDocuments(
+  documents,
+  { vectorStore }
+);
+```
+
+Supported vector stores:
+- Pinecone
+- Qdrant
+- Chroma
+- Weaviate
+- Milvus
+- MongoDB Atlas
+- PostgreSQL (pgvector)
+- And more!
+
+## Next Steps
+
+Now that you understand the core concepts, dive deeper into specific topics:
+
+<CardGroup cols={2}>
+  <Card title="Query Engines" icon="search" href="/query-engines">
+    Learn about different query engine types and customization
+  </Card>
+  <Card title="Chat Engines" icon="comments" href="/chat-engines">
+    Build conversational interfaces with context
+  </Card>
+  <Card title="Agents" icon="robot" href="/agents">
+    Create intelligent agents with tools and reasoning
+  </Card>
+  <Card title="Vector Stores" icon="database" href="/vector-stores">
+    Integrate production vector databases
+  </Card>
+</CardGroup>

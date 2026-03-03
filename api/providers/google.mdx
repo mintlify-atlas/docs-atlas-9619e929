@@ -1,0 +1,248 @@
+---
+title: "Google"
+description: "Google Gemini LLM and embedding provider"
+icon: "google"
+---
+
+## Overview
+
+The Google provider integrates Gemini models for LLM and embedding capabilities with LlamaIndex.TS.
+
+## Installation
+
+```bash
+npm install @llamaindex/google
+```
+
+## Gemini LLM
+
+### Basic Usage
+
+```typescript
+import { Gemini } from "@llamaindex/google";
+
+const llm = new Gemini({
+  model: "gemini-2.0-flash-exp",
+  apiKey: process.env.GOOGLE_API_KEY
+});
+
+const response = await llm.chat({
+  messages: [
+    { role: "user", content: "Explain machine learning" }
+  ]
+});
+
+console.log(response.message.content);
+```
+
+### Constructor Options
+
+<ParamField path="model" type="string" default="gemini-2.0-flash-exp">
+  Gemini model name
+</ParamField>
+
+<ParamField path="apiKey" type="string">
+  Google API key (defaults to `GOOGLE_API_KEY` env variable)
+</ParamField>
+
+<ParamField path="temperature" type="number" default={0.1}>
+  Sampling temperature
+</ParamField>
+
+<ParamField path="topP" type="number" default={1}>
+  Nucleus sampling
+</ParamField>
+
+<ParamField path="topK" type="number">
+  Top-k sampling
+</ParamField>
+
+<ParamField path="maxTokens" type="number">
+  Maximum output tokens
+</ParamField>
+
+### Supported Models
+
+- `gemini-2.0-flash-exp`: Latest flash model (experimental)
+- `gemini-1.5-pro`: Most capable
+- `gemini-1.5-flash`: Fast and efficient
+- `gemini-1.0-pro`: Production stable
+
+### Streaming
+
+```typescript
+const stream = await llm.chat({
+  messages: [{ role: "user", content: "Tell me about space" }],
+  stream: true
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.delta);
+}
+```
+
+### Multi-modal Input
+
+Gemini excels at multi-modal understanding:
+
+```typescript
+const response = await llm.chat({
+  messages: [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "Describe this image" },
+        {
+          type: "image",
+          data: imageBase64,
+          mimeType: "image/jpeg"
+        }
+      ]
+    }
+  ]
+});
+```
+
+### Function Calling
+
+```typescript
+import { tool } from "@llamaindex/core/tools";
+import { z } from "zod";
+
+const movieTool = tool({
+  name: "find_movies",
+  description: "Find movies by genre",
+  parameters: z.object({
+    genre: z.string(),
+    year: z.number().optional()
+  }),
+  execute: async ({ genre, year }) => {
+    return `Movies in ${genre}${year ? ` from ${year}` : ""}`;
+  }
+});
+
+const response = await llm.chat({
+  messages: [{ role: "user", content: "Find sci-fi movies from 2023" }],
+  tools: [movieTool]
+});
+```
+
+## Gemini Embedding
+
+### Basic Usage
+
+```typescript
+import { GeminiEmbedding } from "@llamaindex/google";
+
+const embedModel = new GeminiEmbedding({
+  model: "text-embedding-004",
+  apiKey: process.env.GOOGLE_API_KEY
+});
+
+const embedding = await embedModel.getTextEmbedding(
+  "LlamaIndex is a data framework"
+);
+
+console.log(embedding.length); // 768
+```
+
+### Constructor Options
+
+<ParamField path="model" type="string" default="text-embedding-004">
+  Embedding model name
+</ParamField>
+
+<ParamField path="apiKey" type="string">
+  Google API key
+</ParamField>
+
+<ParamField path="embedBatchSize" type="number" default={10}>
+  Batch size for embeddings
+</ParamField>
+
+### Supported Embedding Models
+
+- `text-embedding-004`: Latest model (768 dimensions)
+- `text-embedding-preview-0815`: Preview model
+
+### Batch Embedding
+
+```typescript
+const texts = [
+  "First document",
+  "Second document",
+  "Third document"
+];
+
+const embeddings = await embedModel.getTextEmbeddingsBatch(texts);
+console.log(embeddings.length); // 3
+```
+
+## Configuration
+
+### Environment Variables
+
+```bash
+GOOGLE_API_KEY=AIza...
+```
+
+Get API key: [Google AI Studio](https://makersuite.google.com/app/apikey)
+
+### Global Settings
+
+```typescript
+import { Settings } from "llamaindex";
+import { Gemini, GeminiEmbedding } from "@llamaindex/google";
+
+Settings.llm = new Gemini({ model: "gemini-1.5-pro" });
+Settings.embedModel = new GeminiEmbedding();
+```
+
+## With LlamaIndex
+
+```typescript
+import { Settings, VectorStoreIndex, Document } from "llamaindex";
+import { Gemini, GeminiEmbedding } from "@llamaindex/google";
+
+Settings.llm = new Gemini({ model: "gemini-1.5-flash" });
+Settings.embedModel = new GeminiEmbedding();
+
+const documents = [
+  new Document({ text: "Document content..." })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+const queryEngine = index.asQueryEngine();
+
+const response = await queryEngine.query({
+  query: "What is this about?"
+});
+```
+
+## Safety Settings
+
+```typescript
+const llm = new Gemini({
+  model: "gemini-1.5-pro",
+  safetySettings: [
+    {
+      category: "HARM_CATEGORY_HARASSMENT",
+      threshold: "BLOCK_MEDIUM_AND_ABOVE"
+    }
+  ]
+});
+```
+
+## Best Practices
+
+1. **Use Flash for speed**: gemini-1.5-flash is fast and cost-effective
+2. **Leverage multi-modal**: Gemini excels at image understanding
+3. **Monitor quotas**: Free tier has daily limits
+4. **Use appropriate safety settings**: Configure for your use case
+5. **Stream for better UX**: Gemini supports streaming
+
+## See Also
+
+- [Google AI Documentation](https://ai.google.dev/docs)
+- [Core LLM API](/api/core/llms)
+- [Core Embeddings API](/api/core/embeddings)

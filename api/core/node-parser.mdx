@@ -1,0 +1,275 @@
+---
+title: "Node Parser"
+description: "Text splitting and chunking for document processing"
+---
+
+## Overview
+
+Node parsers split documents into smaller chunks (nodes) for processing. They handle text segmentation, maintain relationships between chunks, and preserve metadata.
+
+## NodeParser
+
+Abstract base class for all node parsers.
+
+```typescript
+import { NodeParser } from "@llamaindex/core/node-parser";
+```
+
+### Properties
+
+<ParamField path="includeMetadata" type="boolean" default={true}>
+  Whether to include document metadata in parsed nodes
+</ParamField>
+
+<ParamField path="includePrevNextRel" type="boolean" default={true}>
+  Whether to include previous/next relationships between consecutive chunks
+</ParamField>
+
+### Methods
+
+<ParamField path="getNodesFromDocuments" type="method">
+  Parse documents into nodes
+  
+  ```typescript
+  getNodesFromDocuments(documents: TextNode[]): TextNode[] | Promise<TextNode[]>
+  ```
+  
+  <Expandable title="Parameters">
+    <ParamField path="documents" type="TextNode[]" required>
+      Input documents to parse
+    </ParamField>
+  </Expandable>
+  
+  <Expandable title="Returns">
+    <ResponseField name="nodes" type="TextNode[]">
+      Parsed text nodes with relationships and metadata
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+## TextSplitter
+
+Abstract base class for text splitting strategies.
+
+```typescript
+import { TextSplitter } from "@llamaindex/core/node-parser";
+```
+
+### Methods
+
+<ParamField path="splitText" type="method">
+  Split a single text into chunks
+  
+  ```typescript
+  abstract splitText(text: string): string[]
+  ```
+  
+  <Expandable title="Parameters">
+    <ParamField path="text" type="string" required>
+      Text to split
+    </ParamField>
+  </Expandable>
+  
+  <Expandable title="Returns">
+    <ResponseField name="chunks" type="string[]">
+      Array of text chunks
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="splitTexts" type="method">
+  Split multiple texts into chunks
+  
+  ```typescript
+  splitTexts(texts: string[]): string[]
+  ```
+</ParamField>
+
+## SentenceSplitter
+
+Splits text by sentences with configurable chunk size and overlap.
+
+```typescript
+import { SentenceSplitter } from "@llamaindex/core/node-parser";
+```
+
+### Constructor Options
+
+<ParamField path="chunkSize" type="number" default={1024}>
+  Maximum number of characters per chunk
+</ParamField>
+
+<ParamField path="chunkOverlap" type="number" default={200}>
+  Number of characters to overlap between chunks
+</ParamField>
+
+<ParamField path="separator" type="string" default={" "}>
+  Separator to use when splitting
+</ParamField>
+
+<ParamField path="paragraphSeparator" type="string" default={"\n\n\n"}>
+  Separator for paragraph boundaries
+</ParamField>
+
+<ParamField path="secondarySeparator" type="string" default={"\n\n"}>
+  Secondary separator (e.g., line breaks)
+</ParamField>
+
+### Example
+
+```typescript
+import { SentenceSplitter } from "@llamaindex/core/node-parser";
+import { Document } from "@llamaindex/core/schema";
+
+const parser = new SentenceSplitter({
+  chunkSize: 512,
+  chunkOverlap: 50
+});
+
+const document = new Document({
+  text: "Long document text..."
+});
+
+const nodes = parser.getNodesFromDocuments([document]);
+console.log(nodes.length); // Number of chunks created
+```
+
+## MarkdownNodeParser
+
+Splits markdown documents while preserving structure.
+
+```typescript
+import { MarkdownNodeParser } from "@llamaindex/core/node-parser";
+```
+
+### Constructor Options
+
+<ParamField path="chunkSize" type="number" default={1024}>
+  Maximum characters per chunk
+</ParamField>
+
+<ParamField path="chunkOverlap" type="number" default={200}>
+  Overlap between chunks
+</ParamField>
+
+### Example
+
+```typescript
+const parser = new MarkdownNodeParser({
+  chunkSize: 1024,
+  chunkOverlap: 100
+});
+
+const document = new Document({
+  text: "# Heading\n\nParagraph text...",
+  metadata: { format: "markdown" }
+});
+
+const nodes = parser.getNodesFromDocuments([document]);
+```
+
+## MetadataAwareTextSplitter
+
+Abstract base for splitters that consider metadata when chunking.
+
+```typescript
+abstract class MetadataAwareTextSplitter extends TextSplitter {
+  abstract splitTextMetadataAware(
+    text: string,
+    metadata: string
+  ): string[];
+}
+```
+
+Useful when metadata should be included in chunk size calculations.
+
+## Node Relationships
+
+Parsed nodes automatically include relationships:
+
+```typescript
+const nodes = parser.getNodesFromDocuments([document]);
+
+// First node
+console.log(nodes[0].relationships);
+// {
+//   [NodeRelationship.SOURCE]: { nodeId: "doc-id", ... },
+//   [NodeRelationship.NEXT]: { nodeId: "node-1-id", ... }
+// }
+
+// Middle node
+console.log(nodes[1].relationships);
+// {
+//   [NodeRelationship.SOURCE]: { nodeId: "doc-id", ... },
+//   [NodeRelationship.PREVIOUS]: { nodeId: "node-0-id", ... },
+//   [NodeRelationship.NEXT]: { nodeId: "node-2-id", ... }
+// }
+```
+
+## Metadata Inheritance
+
+Nodes inherit metadata from parent documents:
+
+```typescript
+const document = new Document({
+  text: "Document text...",
+  metadata: {
+    title: "My Document",
+    author: "John Doe"
+  }
+});
+
+const nodes = parser.getNodesFromDocuments([document]);
+
+// All nodes inherit parent metadata
+console.log(nodes[0].metadata);
+// { title: "My Document", author: "John Doe" }
+```
+
+## Character Positions
+
+Parsers track character positions in the original document:
+
+```typescript
+const nodes = parser.getNodesFromDocuments([document]);
+
+console.log(nodes[0].startCharIdx); // 0
+console.log(nodes[0].endCharIdx);   // 512
+console.log(nodes[1].startCharIdx); // 462 (with overlap)
+console.log(nodes[1].endCharIdx);   // 1024
+```
+
+## Custom Node Parser
+
+Create custom parsers by extending NodeParser:
+
+```typescript
+import { NodeParser } from "@llamaindex/core/node-parser";
+import { TextNode } from "@llamaindex/core/schema";
+
+class CustomParser extends NodeParser {
+  protected parseNodes(documents: TextNode[]): TextNode[] {
+    return documents.flatMap(doc => {
+      // Custom splitting logic
+      const chunks = this.customSplit(doc.text);
+      
+      return chunks.map(chunk => new TextNode({
+        text: chunk,
+        metadata: { ...doc.metadata }
+      }));
+    });
+  }
+  
+  private customSplit(text: string): string[] {
+    // Your custom splitting logic
+    return text.split(/\n---\n/);
+  }
+}
+```
+
+## Best Practices
+
+1. **Choose appropriate chunk size**: Smaller chunks (256-512) for precise retrieval, larger chunks (1024-2048) for more context
+2. **Use overlap**: 10-20% overlap helps maintain context across chunk boundaries
+3. **Preserve structure**: Use MarkdownNodeParser for markdown to maintain headings and formatting
+4. **Consider token limits**: Account for model context windows when setting chunk sizes

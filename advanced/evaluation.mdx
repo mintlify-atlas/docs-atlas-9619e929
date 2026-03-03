@@ -1,0 +1,405 @@
+---
+title: Evaluation
+description: Measure and improve RAG pipeline quality
+---
+
+Evaluation helps you measure the quality of your RAG pipeline and identify areas for improvement. LlamaIndex provides evaluators for faithfulness, relevancy, and correctness.
+
+## Overview
+
+All evaluators implement the `BaseEvaluator` interface:
+
+```typescript
+interface BaseEvaluator {
+  evaluate(params: EvaluatorParams): Promise<EvaluationResult>;
+  evaluateResponse?(params: EvaluatorResponseParams): Promise<EvaluationResult>;
+}
+```
+
+Evaluators return an `EvaluationResult`:
+
+```typescript
+type EvaluationResult = {
+  query?: string;
+  contexts?: string[];
+  response: string;
+  score: number;        // Numeric score (0-1 or 0-5)
+  passing: boolean;     // Whether evaluation passed
+  feedback: string;     // Detailed feedback from evaluator
+};
+```
+
+## Faithfulness
+
+**What it measures:** Whether the response is grounded in the provided context.
+
+Faithfulness checks if the answer contains hallucinations or makes claims not supported by the source documents.
+
+```typescript
+import { FaithfulnessEvaluator } from "llamaindex/evaluation";
+
+const evaluator = new FaithfulnessEvaluator({
+  raiseError: false, // Don't throw on failing evaluation
+});
+
+const result = await evaluator.evaluate({
+  query: "What is LlamaIndex?",
+  response: "LlamaIndex is a data framework for LLM applications.",
+  contexts: [
+    "LlamaIndex is a data framework for building LLM applications.",
+    "It provides tools for data ingestion, indexing, and querying.",
+  ],
+});
+
+console.log(result.passing); // true
+console.log(result.score);   // 1.0
+console.log(result.feedback); // "Yes"
+```
+
+### Evaluate Response Objects
+
+Directly evaluate query engine responses:
+
+```typescript
+const response = await queryEngine.query({
+  query: "What is LlamaIndex?",
+});
+
+const result = await evaluator.evaluateResponse({
+  query: "What is LlamaIndex?",
+  response: response,
+});
+```
+
+### Custom Prompts
+
+```typescript
+import { PromptTemplate } from "@llamaindex/core/prompts";
+
+const faithfulnessPrompt = new PromptTemplate({
+  template: `Context: {context}
+
+Response: {query}
+
+Is the response faithful to the context? Answer yes or no.`,
+});
+
+const evaluator = new FaithfulnessEvaluator({
+  faithfulnessSystemPrompt: faithfulnessPrompt,
+});
+```
+
+## Relevancy
+
+**What it measures:** Whether the response actually answers the question.
+
+Relevancy checks if the response addresses the user's query.
+
+```typescript
+import { RelevancyEvaluator } from "llamaindex/evaluation";
+
+const evaluator = new RelevancyEvaluator();
+
+const result = await evaluator.evaluate({
+  query: "What is the capital of France?",
+  response: "Paris is the capital of France.",
+  contexts: ["Paris is the capital and largest city of France."],
+});
+
+console.log(result.passing); // true
+console.log(result.score);   // 1.0
+```
+
+### How It Works
+
+Relevancy uses an LLM to determine if the response answers the question:
+
+1. Formats query and response together
+2. Queries a SummaryIndex of the contexts
+3. LLM answers "yes" or "no"
+4. Returns score (1.0 for yes, 0.0 for no)
+
+## Correctness
+
+**What it measures:** How correct the response is compared to a reference answer.
+
+Correctness requires a reference (ground truth) answer:
+
+```typescript
+import { CorrectnessEvaluator } from "llamaindex/evaluation";
+
+const evaluator = new CorrectnessEvaluator({
+  scoreThreshold: 4.0, // Passing score threshold
+});
+
+const result = await evaluator.evaluate({
+  query: "What is 2+2?",
+  response: "2+2 equals 4",
+  reference: "The answer is 4",
+});
+
+console.log(result.score);   // 5.0 (scale of 1-5)
+console.log(result.passing); // true (>= 4.0)
+console.log(result.feedback); // Reasoning for the score
+```
+
+### Score Scale
+
+Correctness uses a 1-5 scale:
+
+- **5** - Perfect match
+- **4** - Correct with minor differences
+- **3** - Partially correct
+- **2** - Mostly incorrect
+- **1** - Completely incorrect
+
+### Custom Parser
+
+Parse LLM responses differently:
+
+```typescript
+function customParser(response: string): [number, string] {
+  // Extract score and reasoning from response
+  const scoreMatch = response.match(/Score: (\d+)/);
+  const score = scoreMatch ? parseInt(scoreMatch[1]) : 0;
+  const reasoning = response.split("\n").slice(1).join("\n");
+  return [score, reasoning];
+}
+
+const evaluator = new CorrectnessEvaluator({
+  parserFunction: customParser,
+});
+```
+
+## Batch Evaluation
+
+Evaluate multiple queries:
+
+```typescript
+import {
+  FaithfulnessEvaluator,
+  RelevancyEvaluator,
+  CorrectnessEvaluator,
+} from "llamaindex/evaluation";
+
+const testCases = [
+  {
+    query: "What is LlamaIndex?",
+    reference: "LlamaIndex is a data framework for LLMs",
+  },
+  {
+    query: "How do I create an index?",
+    reference: "Use VectorStoreIndex.fromDocuments()",
+  },
+];
+
+const faithfulness = new FaithfulnessEvaluator();
+const relevancy = new RelevancyEvaluator();
+const correctness = new CorrectnessEvaluator();
+
+const results = [];
+
+for (const testCase of testCases) {
+  const response = await queryEngine.query({
+    query: testCase.query,
+  });
+
+  const [faithResult, relResult, corrResult] = await Promise.all([
+    faithfulness.evaluateResponse({ query: testCase.query, response }),
+    relevancy.evaluateResponse({ query: testCase.query, response }),
+    correctness.evaluate({
+      query: testCase.query,
+      response: response.toString(),
+      reference: testCase.reference,
+    }),
+  ]);
+
+  results.push({
+    query: testCase.query,
+    faithfulness: faithResult.score,
+    relevancy: relResult.score,
+    correctness: corrResult.score,
+    passing: faithResult.passing && relResult.passing && corrResult.passing,
+  });
+}
+
+// Calculate averages
+const avgFaithfulness = results.reduce((sum, r) => sum + r.faithfulness, 0) / results.length;
+const avgRelevancy = results.reduce((sum, r) => sum + r.relevancy, 0) / results.length;
+const avgCorrectness = results.reduce((sum, r) => sum + r.correctness, 0) / results.length;
+
+console.log({
+  avgFaithfulness,
+  avgRelevancy,
+  avgCorrectness,
+  passRate: results.filter(r => r.passing).length / results.length,
+});
+```
+
+## Rate Limiting
+
+Avoid API rate limits:
+
+```typescript
+const results = [];
+
+for (const testCase of testCases) {
+  const result = await evaluator.evaluate({
+    query: testCase.query,
+    response: testCase.response,
+    contexts: testCase.contexts,
+    sleepTimeInSeconds: 1, // Wait 1 second between calls
+  });
+  results.push(result);
+}
+```
+
+## Evaluation Pipeline
+
+Create a comprehensive evaluation workflow:
+
+```typescript
+class RAGEvaluationPipeline {
+  constructor(
+    private queryEngine: any,
+    private evaluators = {
+      faithfulness: new FaithfulnessEvaluator(),
+      relevancy: new RelevancyEvaluator(),
+      correctness: new CorrectnessEvaluator(),
+    }
+  ) {}
+
+  async evaluate(testCases: Array<{
+    query: string;
+    reference?: string;
+  }>) {
+    const results = [];
+
+    for (const testCase of testCases) {
+      const response = await this.queryEngine.query({
+        query: testCase.query,
+      });
+
+      const evalPromises = [
+        this.evaluators.faithfulness.evaluateResponse({
+          query: testCase.query,
+          response,
+        }),
+        this.evaluators.relevancy.evaluateResponse({
+          query: testCase.query,
+          response,
+        }),
+      ];
+
+      if (testCase.reference) {
+        evalPromises.push(
+          this.evaluators.correctness.evaluate({
+            query: testCase.query,
+            response: response.toString(),
+            reference: testCase.reference,
+          })
+        );
+      }
+
+      const [faithfulness, relevancy, correctness] = await Promise.all(evalPromises);
+
+      results.push({
+        query: testCase.query,
+        response: response.toString(),
+        scores: {
+          faithfulness: faithfulness.score,
+          relevancy: relevancy.score,
+          correctness: correctness?.score,
+        },
+        passing: {
+          faithfulness: faithfulness.passing,
+          relevancy: relevancy.passing,
+          correctness: correctness?.passing ?? true,
+        },
+        feedback: {
+          faithfulness: faithfulness.feedback,
+          relevancy: relevancy.feedback,
+          correctness: correctness?.feedback,
+        },
+      });
+    }
+
+    return this.summarize(results);
+  }
+
+  private summarize(results: any[]) {
+    return {
+      results,
+      summary: {
+        total: results.length,
+        passed: results.filter(r => 
+          r.passing.faithfulness && 
+          r.passing.relevancy && 
+          r.passing.correctness
+        ).length,
+        avgScores: {
+          faithfulness: this.average(results.map(r => r.scores.faithfulness)),
+          relevancy: this.average(results.map(r => r.scores.relevancy)),
+          correctness: this.average(
+            results.map(r => r.scores.correctness).filter(Boolean)
+          ),
+        },
+      },
+    };
+  }
+
+  private average(numbers: number[]) {
+    return numbers.reduce((sum, n) => sum + n, 0) / numbers.length;
+  }
+}
+
+// Usage
+const pipeline = new RAGEvaluationPipeline(queryEngine);
+
+const evaluation = await pipeline.evaluate([
+  { query: "What is LlamaIndex?", reference: "A data framework" },
+  { query: "How do I use it?", reference: "Import and create an index" },
+]);
+
+console.log(evaluation.summary);
+```
+
+## Best Practices
+
+**Test Set Creation:**
+
+- Create diverse test cases covering different query types
+- Include edge cases and common failure modes
+- Use real user queries when possible
+- Maintain reference answers for correctness evaluation
+
+**Metric Selection:**
+
+- **Faithfulness** - Critical for preventing hallucinations
+- **Relevancy** - Ensures responses answer the question
+- **Correctness** - Requires reference answers, best for regression testing
+
+**Iteration:**
+
+1. Establish baseline scores
+2. Make changes (prompts, retrievers, etc.)
+3. Re-run evaluation
+4. Compare scores to baseline
+5. Keep improvements, discard regressions
+
+**Performance:**
+
+- Run evaluations in parallel when possible
+- Cache LLM responses to avoid redundant calls
+- Use rate limiting to avoid API errors
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Postprocessors" icon="filter" href="/advanced/postprocessors">
+    Improve retrieval quality with filtering and reranking
+  </Card>
+  <Card title="Memory" icon="brain" href="/advanced/memory">
+    Manage conversation context and history
+  </Card>
+</CardGroup>

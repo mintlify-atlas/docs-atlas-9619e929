@@ -1,0 +1,266 @@
+---
+title: "Engines"
+description: "Query and chat engines for data interaction"
+---
+
+## Overview
+
+Engines provide high-level interfaces for querying and chatting with your indexed data. LlamaIndex provides two main types:
+
+- **Query Engines**: Question-answering over data
+- **Chat Engines**: Multi-turn conversations with context
+
+## Query Engines
+
+### RetrieverQueryEngine
+
+Standard query engine combining retrieval with response synthesis.
+
+```typescript
+import { RetrieverQueryEngine } from "llamaindex/engines/query";
+import { VectorStoreIndex } from "llamaindex";
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+const queryEngine = index.asQueryEngine({
+  similarityTopK: 3
+});
+
+const response = await queryEngine.query({
+  query: "What is LlamaIndex?"
+});
+
+console.log(response.response);
+console.log(response.sourceNodes); // Retrieved context
+```
+
+### SubQuestionQueryEngine
+
+Breaks complex questions into sub-questions.
+
+```typescript
+import { SubQuestionQueryEngine } from "llamaindex/engines/query";
+
+const queryEngineTools = [
+  {
+    queryEngine: docsQueryEngine,
+    description: "Documentation query engine"
+  },
+  {
+    queryEngine: codeQueryEngine,
+    description: "Code query engine"
+  }
+];
+
+const queryEngine = new SubQuestionQueryEngine({
+  queryEngineTools
+});
+
+const response = await queryEngine.query({
+  query: "Compare the performance of algorithm A vs algorithm B"
+});
+```
+
+### RouterQueryEngine
+
+Routes queries to the most appropriate engine.
+
+```typescript
+import { RouterQueryEngine } from "llamaindex/engines/query";
+import { LLMSingleSelector } from "llamaindex/selectors";
+
+const selector = new LLMSingleSelector();
+
+const queryEngine = new RouterQueryEngine({
+  selector,
+  queryEngineTools: [
+    {
+      queryEngine: vectorEngine,
+      description: "Good for semantic search"
+    },
+    {
+      queryEngine: keywordEngine,
+      description: "Good for keyword search"
+    }
+  ]
+});
+```
+
+## Chat Engines
+
+### ContextChatEngine
+
+Chat engine with retrieval augmented generation (RAG).
+
+```typescript
+import { ContextChatEngine } from "llamaindex/engines/chat";
+import { VectorStoreIndex } from "llamaindex";
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+const chatEngine = index.asChatEngine();
+
+const response1 = await chatEngine.chat({
+  message: "What is LlamaIndex?"
+});
+
+const response2 = await chatEngine.chat({
+  message: "Tell me more about its features"
+});
+
+// Chat history is maintained automatically
+const history = await chatEngine.chatHistory;
+```
+
+### SimpleChatEngine
+
+Basic chat without retrieval.
+
+```typescript
+import { SimpleChatEngine } from "llamaindex/engines/chat";
+import { OpenAI } from "@llamaindex/openai";
+
+const llm = new OpenAI({ model: "gpt-4" });
+const chatEngine = new SimpleChatEngine({ llm });
+
+const response = await chatEngine.chat({
+  message: "Hello!"
+});
+```
+
+## Streaming
+
+Both query and chat engines support streaming:
+
+### Streaming Queries
+
+```typescript
+const stream = await queryEngine.query({
+  query: "Explain LlamaIndex",
+  stream: true
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.response);
+}
+```
+
+### Streaming Chat
+
+```typescript
+const stream = await chatEngine.chat({
+  message: "Tell me a story",
+  stream: true
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.response);
+}
+```
+
+## Response Synthesis
+
+Customize how responses are generated from retrieved context:
+
+```typescript
+import { ResponseSynthesizer, CompactAndRefine, TreeSummarize } from "llamaindex";
+
+// Compact and refine
+const synthesizer1 = new ResponseSynthesizer({
+  responseBuilder: new CompactAndRefine()
+});
+
+// Tree summarize
+const synthesizer2 = new ResponseSynthesizer({
+  responseBuilder: new TreeSummarize()
+});
+
+const queryEngine = index.asQueryEngine({
+  responseSynthesizer: synthesizer1
+});
+```
+
+## Retrieval Configuration
+
+```typescript
+const queryEngine = index.asQueryEngine({
+  // Number of nodes to retrieve
+  similarityTopK: 5,
+  
+  // Custom retriever
+  retriever: index.asRetriever({
+    similarityTopK: 10
+  }),
+  
+  // Post-processing
+  nodePostprocessors: [similarityPostprocessor]
+});
+```
+
+## Multi-modal Queries
+
+Engines support multi-modal input:
+
+```typescript
+const response = await queryEngine.query({
+  query: [
+    { type: "text", text: "What's in this diagram?" },
+    { type: "image_url", image_url: { url: "data:image/png;base64,..." } }
+  ]
+});
+```
+
+## Custom System Prompts
+
+```typescript
+const chatEngine = index.asChatEngine({
+  systemPrompt: "You are a helpful AI assistant specialized in technical documentation."
+});
+
+const queryEngine = index.asQueryEngine({
+  textQATemplate: "Context: {context}\n\nQuestion: {query}\n\nAnswer:"
+});
+```
+
+## Memory Management
+
+```typescript
+import { ChatMemoryBuffer } from "@llamaindex/core/memory";
+
+const memory = new ChatMemoryBuffer({
+  tokenLimit: 3000
+});
+
+const chatEngine = index.asChatEngine({
+  chatHistory: memory
+});
+```
+
+## Node Post-processors
+
+Filter or rerank retrieved nodes:
+
+```typescript
+import { SimilarityPostprocessor } from "llamaindex/postprocessors";
+
+const postprocessor = new SimilarityPostprocessor({
+  similarityCutoff: 0.7
+});
+
+const queryEngine = index.asQueryEngine({
+  nodePostprocessors: [postprocessor]
+});
+```
+
+## Best Practices
+
+1. **Use ContextChatEngine for RAG**: Automatically retrieves relevant context
+2. **Configure similarity threshold**: Filter low-quality retrieval results
+3. **Stream long responses**: Better UX for lengthy answers
+4. **Inspect source nodes**: Verify response quality
+5. **Use sub-question for complex queries**: Break down multi-part questions
+6. **Set appropriate top_k**: Balance between context and noise
+
+## See Also
+
+- [Query Engine Core API](/api/core/query-engine)
+- [Chat Engine Core API](/api/core/chat-engine)
+- [Response Synthesizers](https://docs.llamaindex.ai/en/stable/module_guides/querying/response_synthesizers/)

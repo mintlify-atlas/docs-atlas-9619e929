@@ -1,0 +1,294 @@
+---
+title: "Schema"
+description: "Core data structures for documents, nodes, and responses"
+---
+
+## Overview
+
+The Schema module defines the foundational data structures used throughout LlamaIndex.TS, including documents, nodes, relationships, and response types.
+
+## BaseNode
+
+Base class for all node types in LlamaIndex.
+
+```typescript
+import { BaseNode } from "@llamaindex/core/schema";
+```
+
+### Properties
+
+<ParamField path="id_" type="string">
+  Unique identifier for the node (auto-generated if not provided)
+</ParamField>
+
+<ParamField path="embedding" type="number[]">
+  Vector embedding of the node content
+</ParamField>
+
+<ParamField path="metadata" type="Record<string, any>">
+  Arbitrary metadata associated with the node
+</ParamField>
+
+<ParamField path="excludedEmbedMetadataKeys" type="string[]">
+  Metadata keys to exclude when generating embeddings
+</ParamField>
+
+<ParamField path="excludedLlmMetadataKeys" type="string[]">
+  Metadata keys to exclude when sending to LLM
+</ParamField>
+
+<ParamField path="relationships" type="Record<NodeRelationship, RelatedNodeInfo>">
+  Relationships to other nodes (parent, child, next, previous)
+</ParamField>
+
+### Methods
+
+<ParamField path="getContent" type="method">
+  Get node content with metadata based on mode
+  
+  ```typescript
+  getContent(metadataMode: MetadataMode): string
+  ```
+  
+  <Expandable title="Parameters">
+    <ParamField path="metadataMode" type="MetadataMode" required>
+      Mode: `ALL`, `EMBED`, `LLM`, or `NONE`
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="asRelatedNodeInfo" type="method">
+  Convert node to RelatedNodeInfo for relationship storage
+  
+  ```typescript
+  asRelatedNodeInfo(): RelatedNodeInfo
+  ```
+</ParamField>
+
+## TextNode
+
+Node representing a chunk of text, extending BaseNode.
+
+```typescript
+import { TextNode } from "@llamaindex/core/schema";
+```
+
+### Additional Properties
+
+<ParamField path="text" type="string">
+  The text content of the node
+</ParamField>
+
+<ParamField path="startCharIdx" type="number">
+  Start character index in the parent document
+</ParamField>
+
+<ParamField path="endCharIdx" type="number">
+  End character index in the parent document
+</ParamField>
+
+<ParamField path="textTemplate" type="string">
+  Template for formatting text with metadata
+</ParamField>
+
+<ParamField path="metadataTemplate" type="string">
+  Template for formatting metadata
+</ParamField>
+
+### Example
+
+```typescript
+const node = new TextNode({
+  text: "LlamaIndex is a data framework for LLM applications.",
+  metadata: {
+    source: "documentation",
+    page: 1
+  }
+});
+
+console.log(node.id_); // Auto-generated UUID
+console.log(node.getContent(MetadataMode.ALL)); // Text with metadata
+```
+
+## Document
+
+Represents a complete document, extends TextNode.
+
+```typescript
+import { Document } from "@llamaindex/core/schema";
+```
+
+### Additional Properties
+
+<ParamField path="id_" type="string">
+  Document ID (used as doc_id in chunks)
+</ParamField>
+
+<ParamField path="metadata" type="Record<string, any>">
+  Document-level metadata
+</ParamField>
+
+### Example
+
+```typescript
+const document = new Document({
+  text: "Full document text...",
+  metadata: {
+    title: "My Document",
+    author: "John Doe",
+    date: "2024-01-01"
+  }
+});
+```
+
+## NodeWithScore
+
+Node with a relevance score, used in retrieval results.
+
+```typescript
+interface NodeWithScore<T extends BaseNode = BaseNode> {
+  node: T;
+  score?: number;
+}
+```
+
+<Expandable title="Fields">
+  <ResponseField name="node" type="BaseNode">
+    The retrieved node
+  </ResponseField>
+  <ResponseField name="score" type="number">
+    Relevance score (typically 0-1, higher is more relevant)
+  </ResponseField>
+</Expandable>
+
+## EngineResponse
+
+Response from query or chat engines.
+
+```typescript
+import { EngineResponse } from "@llamaindex/core/schema";
+```
+
+### Properties
+
+<ResponseField name="response" type="string">
+  The generated response text
+</ResponseField>
+
+<ResponseField name="sourceNodes" type="NodeWithScore[]">
+  Source nodes used to generate the response
+</ResponseField>
+
+<ResponseField name="metadata" type="Record<string, any>">
+  Additional metadata about the response
+</ResponseField>
+
+### Example
+
+```typescript
+const response: EngineResponse = {
+  response: "LlamaIndex is a data framework...",
+  sourceNodes: [
+    {
+      node: textNode,
+      score: 0.95
+    }
+  ],
+  metadata: {
+    totalTokens: 150
+  }
+};
+```
+
+## Node Relationships
+
+```typescript
+enum NodeRelationship {
+  SOURCE = "source",
+  PREVIOUS = "previous",
+  NEXT = "next",
+  PARENT = "parent",
+  CHILD = "child"
+}
+```
+
+### Example: Node with Relationships
+
+```typescript
+const parentDoc = new Document({ text: "Parent document" });
+
+const childNode = new TextNode({
+  text: "Child chunk",
+  relationships: {
+    [NodeRelationship.SOURCE]: parentDoc.asRelatedNodeInfo()
+  }
+});
+```
+
+## Metadata Modes
+
+```typescript
+enum MetadataMode {
+  ALL = "all",      // Include all metadata
+  EMBED = "embed",  // For embedding (excludes excludedEmbedMetadataKeys)
+  LLM = "llm",      // For LLM (excludes excludedLlmMetadataKeys)
+  NONE = "none"     // No metadata
+}
+```
+
+## TransformComponent
+
+Base class for components that transform nodes (e.g., embeddings, parsers).
+
+```typescript
+abstract class TransformComponent<T> {
+  abstract transform(nodes: BaseNode[], options?: any): T;
+}
+```
+
+### Example
+
+```typescript
+import { TransformComponent } from "@llamaindex/core/schema";
+
+class MyTransform extends TransformComponent<Promise<BaseNode[]>> {
+  async transform(nodes: BaseNode[]): Promise<BaseNode[]> {
+    // Transform nodes
+    return nodes.map(node => {
+      // Add custom metadata
+      node.metadata.processed = true;
+      return node;
+    });
+  }
+}
+```
+
+## FileReader
+
+Base interface for reading files into documents.
+
+```typescript
+interface BaseReader<T = any> {
+  loadData(...args: any[]): Promise<Document[]>;
+}
+```
+
+### Example
+
+```typescript
+import { SimpleDirectoryReader } from "llamaindex";
+
+const reader = new SimpleDirectoryReader();
+const documents = await reader.loadData("./docs");
+```
+
+## Output Parsers
+
+```typescript
+interface BaseOutputParser<T> {
+  parse(output: string): T;
+  format(prompt: string): string;
+}
+```
+
+Output parsers transform LLM text outputs into structured data.

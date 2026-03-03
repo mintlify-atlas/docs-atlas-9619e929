@@ -1,0 +1,448 @@
+---
+title: "Query Engines"
+description: "Build powerful question-answering systems with advanced query engines"
+---
+
+## What are Query Engines?
+
+Query engines process questions over your data and return synthesized answers. Unlike chat engines, query engines:
+
+- Handle **single-turn** questions (no chat history)
+- Support **complex query patterns** (routing, sub-questions)
+- Provide **structured responses** with source citations
+- Enable **advanced retrieval strategies**
+
+## Core Query Engine Types
+
+### RetrieverQueryEngine
+
+The fundamental query engine that retrieves and synthesizes:
+
+```typescript
+import { RetrieverQueryEngine } from "llamaindex";
+
+const retriever = index.asRetriever({ similarityTopK: 5 });
+
+const queryEngine = new RetrieverQueryEngine(retriever);
+
+const response = await queryEngine.query({
+  query: "What is the main topic?"
+});
+
+console.log(response.toString());
+```
+
+### Simple Query Engine from Index
+
+The easiest way to create a query engine:
+
+```typescript
+import { VectorStoreIndex, Document } from "llamaindex";
+
+const document = new Document({ text: "Your document text" });
+const index = await VectorStoreIndex.fromDocuments([document]);
+
+// Creates a RetrieverQueryEngine internally
+const queryEngine = index.asQueryEngine();
+
+const response = await queryEngine.query({
+  query: "What does this document discuss?"
+});
+```
+
+### SubQuestionQueryEngine
+
+Breaks complex questions into sub-questions:
+
+```typescript
+import {
+  Document,
+  QueryEngineTool,
+  SubQuestionQueryEngine,
+  VectorStoreIndex
+} from "llamaindex";
+
+const document = new Document({ text: "Your document text" });
+const index = await VectorStoreIndex.fromDocuments([document]);
+
+const queryEngineTools = [
+  new QueryEngineTool({
+    queryEngine: index.asQueryEngine(),
+    metadata: {
+      name: "documents",
+      description: "Information about the documents"
+    }
+  })
+];
+
+const queryEngine = SubQuestionQueryEngine.fromDefaults({
+  queryEngineTools
+});
+
+const response = await queryEngine.query({
+  query: "How did the topic evolve over time?"
+});
+
+console.log(response.toString());
+```
+
+### RouterQueryEngine
+
+Routes queries to the best query engine:
+
+```typescript
+import {
+  RouterQueryEngine,
+  VectorStoreIndex,
+  SummaryIndex,
+  SentenceSplitter,
+  Settings
+} from "llamaindex";
+import { OpenAI } from "@llamaindex/openai";
+import { SimpleDirectoryReader } from "@llamaindex/readers/directory";
+
+// Configure settings
+Settings.llm = new OpenAI();
+Settings.nodeParser = new SentenceSplitter({ chunkSize: 1024 });
+
+// Load documents
+const documents = await new SimpleDirectoryReader().loadData({
+  directoryPath: "./data"
+});
+
+// Create different indices
+const vectorIndex = await VectorStoreIndex.fromDocuments(documents);
+const summaryIndex = await SummaryIndex.fromDocuments(documents);
+
+// Create router
+const queryEngine = RouterQueryEngine.fromDefaults({
+  queryEngineTools: [
+    {
+      queryEngine: vectorIndex.asQueryEngine(),
+      description: "Useful for retrieving specific context"
+    },
+    {
+      queryEngine: summaryIndex.asQueryEngine(),
+      description: "Useful for summarization questions"
+    }
+  ]
+});
+
+const response = await queryEngine.query({
+  query: "Give me a summary of the documents"
+});
+
+console.log(response.response);
+console.log("Selected:", response.metadata.selectorResult);
+```
+
+## Complete Working Example
+
+Here's a production-ready query engine:
+
+```typescript
+import { Document, VectorStoreIndex } from "llamaindex";
+import fs from "node:fs/promises";
+import { createInterface } from "node:readline/promises";
+
+async function main() {
+  const rl = createInterface({ 
+    input: process.stdin, 
+    output: process.stdout 
+  });
+
+  // Check API key
+  if (!process.env.OPENAI_API_KEY) {
+    console.log("OpenAI API key not found in environment variables.");
+    process.env.OPENAI_API_KEY = await rl.question(
+      "Please enter your OpenAI API key: "
+    );
+  }
+
+  // Load document
+  const essay = await fs.readFile("./data/essay.txt", "utf-8");
+  const document = new Document({ text: essay, id_: "essay" });
+
+  // Create index and query engine
+  const index = await VectorStoreIndex.fromDocuments([document]);
+  const queryEngine = index.asQueryEngine();
+
+  console.log("\nReady to answer questions!\n");
+
+  // Query loop
+  while (true) {
+    const query = await rl.question("Query: ");
+    const response = await queryEngine.query({ query });
+    console.log(response.toString());
+    console.log();
+  }
+}
+
+main().catch(console.error);
+```
+
+## Response Synthesis
+
+Query engines use response synthesizers to combine retrieved chunks:
+
+### Synthesis Modes
+
+```typescript
+import { getResponseSynthesizer } from "llamaindex";
+
+// Compact: Concatenates chunks up to token limit
+const compactSynthesizer = getResponseSynthesizer("compact");
+
+// Refine: Iteratively refines answer with each chunk
+const refineSynthesizer = getResponseSynthesizer("refine");
+
+// Tree Summarize: Builds answer in tree structure
+const treeSynthesizer = getResponseSynthesizer("tree_summarize");
+```
+
+### Using Custom Synthesizers
+
+```typescript
+import { RetrieverQueryEngine, getResponseSynthesizer } from "llamaindex";
+
+const retriever = index.asRetriever();
+const synthesizer = getResponseSynthesizer("tree_summarize");
+
+const queryEngine = new RetrieverQueryEngine({
+  retriever,
+  responseSynthesizer: synthesizer
+});
+```
+
+### Streaming Synthesis
+
+Stream responses as they're generated:
+
+```typescript
+import { getResponseSynthesizer, NodeWithScore, TextNode } from "llamaindex";
+
+const synthesizer = getResponseSynthesizer("compact");
+
+const nodesWithScore: NodeWithScore[] = [
+  {
+    node: new TextNode({ text: "Relevant chunk 1" }),
+    score: 1.0
+  },
+  {
+    node: new TextNode({ text: "Relevant chunk 2" }),
+    score: 0.8
+  }
+];
+
+const stream = await synthesizer.synthesize(
+  {
+    query: "What is the answer?",
+    nodes: nodesWithScore
+  },
+  true  // Enable streaming
+);
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.response);
+}
+```
+
+## Advanced Query Patterns
+
+### Sub-Question Decomposition
+
+Break complex queries into simpler sub-questions:
+
+```typescript
+import {
+  SubQuestionQueryEngine,
+  QueryEngineTool,
+  VectorStoreIndex,
+  Document
+} from "llamaindex";
+
+const doc1 = new Document({ 
+  text: "Content about topic A",
+  id_: "doc_a" 
+});
+const doc2 = new Document({ 
+  text: "Content about topic B",
+  id_: "doc_b" 
+});
+
+const indexA = await VectorStoreIndex.fromDocuments([doc1]);
+const indexB = await VectorStoreIndex.fromDocuments([doc2]);
+
+const queryEngineTools = [
+  new QueryEngineTool({
+    queryEngine: indexA.asQueryEngine(),
+    metadata: {
+      name: "topic_a",
+      description: "Information about topic A"
+    }
+  }),
+  new QueryEngineTool({
+    queryEngine: indexB.asQueryEngine(),
+    metadata: {
+      name: "topic_b",
+      description: "Information about topic B"
+    }
+  })
+];
+
+const queryEngine = SubQuestionQueryEngine.fromDefaults({
+  queryEngineTools
+});
+
+// Complex query that requires both sources
+const response = await queryEngine.query({
+  query: "Compare and contrast topic A and topic B"
+});
+
+console.log(response.toString());
+```
+
+### Router-Based Selection
+
+Automatically choose the best query engine:
+
+```typescript
+import { RouterQueryEngine, VectorStoreIndex, SummaryIndex } from "llamaindex";
+
+const vectorIndex = await VectorStoreIndex.fromDocuments(documents);
+const summaryIndex = await SummaryIndex.fromDocuments(documents);
+
+const router = RouterQueryEngine.fromDefaults({
+  queryEngineTools: [
+    {
+      queryEngine: vectorIndex.asQueryEngine(),
+      description: "Best for specific fact retrieval and targeted questions"
+    },
+    {
+      queryEngine: summaryIndex.asQueryEngine(),
+      description: "Best for summarization and overview questions"
+    }
+  ]
+});
+
+// Router automatically selects the appropriate engine
+const factResponse = await router.query({
+  query: "What was the author's first job?"
+});
+// Uses vectorIndex
+
+const summaryResponse = await router.query({
+  query: "Summarize the author's career"
+});
+// Uses summaryIndex
+
+console.log("Selected engine:", summaryResponse.metadata.selectorResult);
+```
+
+## Query Engine Configuration
+
+### Retrieval Parameters
+
+```typescript
+const queryEngine = index.asQueryEngine({
+  similarityTopK: 10,  // Retrieve top 10 chunks
+  // Additional retriever options
+});
+```
+
+### Custom Retrievers
+
+```typescript
+import { RetrieverQueryEngine } from "llamaindex";
+
+const retriever = index.asRetriever({
+  similarityTopK: 5,
+  // Add filters, custom params, etc.
+});
+
+const queryEngine = new RetrieverQueryEngine(retriever);
+```
+
+### Post-Processing
+
+Add post-processors to refine results:
+
+```typescript
+import { 
+  RetrieverQueryEngine,
+  SimilarityPostprocessor 
+} from "llamaindex";
+
+const retriever = index.asRetriever();
+const postprocessor = new SimilarityPostprocessor({
+  similarityCutoff: 0.7  // Filter out chunks below threshold
+});
+
+const queryEngine = new RetrieverQueryEngine({
+  retriever,
+  nodePostprocessors: [postprocessor]
+});
+```
+
+## Choosing the Right Query Engine
+
+| Engine | Use Case | Pros | Cons |
+|--------|----------|------|------|
+| **RetrieverQueryEngine** | General Q&A | Simple, fast | Single retrieval strategy |
+| **SubQuestionQueryEngine** | Complex questions | Breaks down problems | More LLM calls |
+| **RouterQueryEngine** | Multiple data sources | Intelligent routing | Requires good descriptions |
+| **Index.asQueryEngine()** | Quick prototyping | Easiest setup | Less control |
+
+## Low-Level Query Pipeline
+
+For maximum control, build the query pipeline manually:
+
+```typescript
+import {
+  Document,
+  SentenceSplitter,
+  TextNode,
+  NodeWithScore,
+  getResponseSynthesizer
+} from "llamaindex";
+
+// 1. Parse documents
+const nodeParser = new SentenceSplitter({ chunkSize: 512 });
+const nodes = nodeParser.getNodesFromDocuments([
+  new Document({ text: "Your document text" })
+]);
+
+// 2. Simulate retrieval (in practice, use embeddings + vector search)
+const nodesWithScore: NodeWithScore[] = [
+  {
+    node: new TextNode({ text: "Relevant chunk 1" }),
+    score: 0.9
+  },
+  {
+    node: new TextNode({ text: "Relevant chunk 2" }),
+    score: 0.75
+  }
+];
+
+// 3. Synthesize response
+const synthesizer = getResponseSynthesizer("compact");
+
+const response = await synthesizer.synthesize({
+  query: "What is the answer?",
+  nodes: nodesWithScore
+});
+
+console.log(response.toString());
+```
+
+## Next Steps
+
+- Add [Chat Engines](/guides/chat-engines) for conversational interfaces
+- Build [Agents](/guides/agents) that use query engines as tools
+- Explore [RAG patterns](/guides/rag) for document Q&A
+
+## Related Resources
+
+- [Retrievers](/retrievers/vector-store)
+- [Response Synthesis](/advanced/response-synthesizers)
+- [Vector Stores](/data/storage)

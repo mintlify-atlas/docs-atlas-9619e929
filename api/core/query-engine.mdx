@@ -1,0 +1,284 @@
+---
+title: "Query Engine"
+description: "Query engines for retrieving and generating responses from indexed data"
+---
+
+## Overview
+
+Query engines provide interfaces for querying indexed data and generating responses. They combine retrieval with response synthesis to answer questions over your data.
+
+## BaseQueryEngine
+
+Abstract base class for all query engines.
+
+```typescript
+import { BaseQueryEngine } from "@llamaindex/core/query-engine";
+```
+
+### Methods
+
+<ParamField path="query" type="method">
+  Query the engine with streaming or non-streaming response
+  
+  **Non-streaming:**
+  ```typescript
+  query(params: NonStreamingQueryParams): Promise<EngineResponse>
+  ```
+  
+  **Streaming:**
+  ```typescript
+  query(params: StreamingQueryParams): Promise<AsyncIterable<EngineResponse>>
+  ```
+  
+  <Expandable title="Parameters">
+    <ParamField path="query" type="string | QueryBundle" required>
+      The query string or QueryBundle
+    </ParamField>
+    <ParamField path="stream" type="boolean">
+      Whether to stream the response. Defaults to false
+    </ParamField>
+  </Expandable>
+  
+  <Expandable title="Returns">
+    <ResponseField name="response" type="string">
+      The generated response text
+    </ResponseField>
+    <ResponseField name="sourceNodes" type="NodeWithScore[]">
+      Retrieved source nodes used to generate the response
+    </ResponseField>
+    <ResponseField name="metadata" type="Record<string, any>">
+      Additional response metadata
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="retrieve" type="method">
+  Retrieve relevant nodes without generating a response
+  
+  ```typescript
+  retrieve(query: QueryType): Promise<NodeWithScore[]>
+  ```
+  
+  <Expandable title="Parameters">
+    <ParamField path="query" type="string | QueryBundle" required>
+      The retrieval query
+    </ParamField>
+  </Expandable>
+  
+  <Expandable title="Returns">
+    <ResponseField name="nodes" type="NodeWithScore[]">
+      Array of retrieved nodes with relevance scores
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+## QueryBundle
+
+Enhanced query object with optional embeddings.
+
+```typescript
+type QueryBundle = {
+  query: MessageContent;
+  customEmbeddings?: string[];
+  embeddings?: number[];
+};
+```
+
+<Expandable title="Fields">
+  <ParamField path="query" type="string | MessageContentDetail[]">
+    The query text or multi-modal content
+  </ParamField>
+  <ParamField path="customEmbeddings" type="string[]">
+    Custom embedding strings (optional)
+  </ParamField>
+  <ParamField path="embeddings" type="number[]">
+    Pre-computed query embeddings (optional)
+  </ParamField>
+</Expandable>
+
+## Usage Examples
+
+### Basic Query
+
+```typescript
+import { VectorStoreIndex } from "llamaindex";
+import { Document } from "@llamaindex/core/schema";
+
+const documents = [
+  new Document({ text: "LlamaIndex is a data framework for LLM applications." }),
+  new Document({ text: "It provides tools for ingestion, indexing, and querying." })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+const queryEngine = index.asQueryEngine();
+
+const response = await queryEngine.query({
+  query: "What is LlamaIndex?"
+});
+
+console.log(response.response);
+console.log(response.sourceNodes); // Nodes used to generate response
+```
+
+### Streaming Query
+
+```typescript
+const queryEngine = index.asQueryEngine();
+
+const stream = await queryEngine.query({
+  query: "What is LlamaIndex?",
+  stream: true
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.response);
+}
+```
+
+### Retrieve Only
+
+```typescript
+const nodes = await queryEngine.retrieve("LlamaIndex");
+
+nodes.forEach(nodeWithScore => {
+  console.log(`Score: ${nodeWithScore.score}`);
+  console.log(`Text: ${nodeWithScore.node.text}`);
+});
+```
+
+### QueryBundle with Custom Embeddings
+
+```typescript
+import { OpenAIEmbedding } from "@llamaindex/openai";
+
+const embedModel = new OpenAIEmbedding();
+const queryEmbedding = await embedModel.getTextEmbedding("What is LlamaIndex?");
+
+const response = await queryEngine.query({
+  query: {
+    query: "What is LlamaIndex?",
+    embeddings: queryEmbedding
+  }
+});
+```
+
+## Advanced Query Engines
+
+### RetrieverQueryEngine
+
+Query engine that uses a retriever and response synthesizer.
+
+```typescript
+import { RetrieverQueryEngine } from "llamaindex";
+
+const queryEngine = new RetrieverQueryEngine({
+  retriever: index.asRetriever(),
+  responseSynthesizer: responseSynthesizer
+});
+```
+
+### SubQuestionQueryEngine
+
+Breaks down complex queries into sub-questions.
+
+```typescript
+import { SubQuestionQueryEngine } from "llamaindex";
+
+const queryEngine = new SubQuestionQueryEngine({
+  queryEngineTools: [tool1, tool2],
+  responseSynthesizer: responseSynthesizer
+});
+
+const response = await queryEngine.query({
+  query: "Compare feature A and feature B"
+});
+```
+
+### RouterQueryEngine
+
+Routes queries to appropriate query engines based on content.
+
+```typescript
+import { RouterQueryEngine } from "llamaindex";
+
+const queryEngine = new RouterQueryEngine({
+  selector: selector,
+  queryEngineTools: [docEngine, codeEngine]
+});
+```
+
+## Response Synthesis
+
+Query engines use response synthesizers to generate answers:
+
+```typescript
+import { ResponseSynthesizer, CompactAndRefine } from "llamaindex";
+
+const synthesizer = new ResponseSynthesizer({
+  responseBuilder: new CompactAndRefine(),
+  streaming: true
+});
+
+const queryEngine = index.asQueryEngine({
+  responseSynthesizer: synthesizer
+});
+```
+
+## Query Events
+
+Query engines emit events during execution:
+
+```typescript
+import { Settings } from "llamaindex";
+
+Settings.callbackManager.on("query-start", (event) => {
+  console.log("Query started:", event.query);
+});
+
+Settings.callbackManager.on("query-end", (event) => {
+  console.log("Query completed:", event.response);
+});
+
+const response = await queryEngine.query({ query: "What is LlamaIndex?" });
+```
+
+## Customization
+
+### Custom Query Engine
+
+```typescript
+import { BaseQueryEngine } from "@llamaindex/core/query-engine";
+import { EngineResponse } from "@llamaindex/core/schema";
+
+class CustomQueryEngine extends BaseQueryEngine {
+  async _query(query: string, stream?: boolean): Promise<EngineResponse> {
+    // Custom query logic
+    const nodes = await this.customRetrieve(query);
+    const response = await this.customSynthesize(nodes);
+    
+    return {
+      response: response,
+      sourceNodes: nodes,
+      metadata: {}
+    };
+  }
+  
+  private async customRetrieve(query: string) {
+    // Custom retrieval logic
+    return [];
+  }
+  
+  private async customSynthesize(nodes: NodeWithScore[]) {
+    // Custom synthesis logic
+    return "Generated response";
+  }
+}
+```
+
+## Best Practices
+
+1. **Use streaming for long responses**: Improves perceived latency
+2. **Inspect source nodes**: Verify response quality by checking retrieved sources
+3. **Configure retrieval parameters**: Adjust top_k and similarity threshold for better results
+4. **Handle errors gracefully**: Implement error handling for failed queries
+5. **Cache embeddings**: Reuse QueryBundle with embeddings for repeated queries

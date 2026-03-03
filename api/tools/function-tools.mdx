@@ -1,0 +1,350 @@
+---
+title: "Function Tools"
+description: "Create tools for LLM function calling"
+---
+
+## Overview
+
+Function tools enable LLMs to call external functions, providing them with capabilities beyond text generation.
+
+## Creating Tools
+
+### Basic Tool
+
+```typescript
+import { tool } from "@llamaindex/core/tools";
+import { z } from "zod";
+
+const weatherTool = tool({
+  name: "get_weather",
+  description: "Get current weather for a location",
+  parameters: z.object({
+    location: z.string().describe("City name"),
+    units: z.enum(["celsius", "fahrenheit"]).optional()
+  }),
+  execute: async ({ location, units = "celsius" }) => {
+    // Fetch weather data
+    const weather = await fetchWeather(location);
+    return `Weather in ${location}: ${weather.temp}°${units === "celsius" ? "C" : "F"}`;
+  }
+});
+```
+
+### Tool Signature
+
+```typescript
+function tool<T>(config: {
+  name: string;
+  description: string;
+  parameters: ZodSchema<T>;
+  execute: (input: T) => JSONValue | Promise<JSONValue>;
+}): FunctionTool<T>
+```
+
+## Using Tools
+
+### With LLM
+
+```typescript
+import { OpenAI } from "@llamaindex/openai";
+
+const llm = new OpenAI({ model: "gpt-4" });
+
+const response = await llm.chat({
+  messages: [{ role: "user", content: "What's the weather in Paris?" }],
+  tools: [weatherTool]
+});
+
+console.log(response.message.content);
+```
+
+### With Agent Workflow
+
+```typescript
+import { Workflow, StartEvent, StopEvent } from "@llamaindex/workflow";
+import { OpenAI } from "@llamaindex/openai";
+
+class AgentWorkflow extends Workflow {
+  private llm = new OpenAI({ model: "gpt-4" });
+  private tools = [weatherTool, calculatorTool];
+  
+  async run(ctx: Context, ev: StartEvent) {
+    const response = await this.llm.chat({
+      messages: [{ role: "user", content: ev.message }],
+      tools: this.tools
+    });
+    
+    return new StopEvent({ result: response.message.content });
+  }
+}
+```
+
+## Common Tools
+
+### Calculator Tool
+
+```typescript
+const calculatorTool = tool({
+  name: "calculator",
+  description: "Perform mathematical calculations",
+  parameters: z.object({
+    expression: z.string().describe("Math expression to evaluate")
+  }),
+  execute: async ({ expression }) => {
+    try {
+      const result = eval(expression);
+      return String(result);
+    } catch (error) {
+      return `Error: ${error.message}`;
+    }
+  }
+});
+```
+
+### Web Search Tool
+
+```typescript
+const searchTool = tool({
+  name: "web_search",
+  description: "Search the web for information",
+  parameters: z.object({
+    query: z.string(),
+    max_results: z.number().min(1).max(10).default(5)
+  }),
+  execute: async ({ query, max_results }) => {
+    const results = await searchAPI(query, max_results);
+    return JSON.stringify(results);
+  }
+});
+```
+
+### Database Query Tool
+
+```typescript
+const dbQueryTool = tool({
+  name: "query_database",
+  description: "Query the database",
+  parameters: z.object({
+    query: z.string().describe("SQL query to execute"),
+    limit: z.number().optional()
+  }),
+  execute: async ({ query, limit }) => {
+    const results = await db.query(query, limit);
+    return JSON.stringify(results);
+  }
+});
+```
+
+### File Reader Tool
+
+```typescript
+const fileReaderTool = tool({
+  name: "read_file",
+  description: "Read contents of a file",
+  parameters: z.object({
+    filepath: z.string().describe("Path to the file")
+  }),
+  execute: async ({ filepath }) => {
+    const fs = await import("fs/promises");
+    const content = await fs.readFile(filepath, "utf-8");
+    return content;
+  }
+});
+```
+
+## Parameter Schemas
+
+### Simple Types
+
+```typescript
+const tool1 = tool({
+  name: "simple_tool",
+  description: "Tool with simple parameters",
+  parameters: z.object({
+    text: z.string(),
+    count: z.number(),
+    enabled: z.boolean()
+  }),
+  execute: async ({ text, count, enabled }) => {
+    // ...
+  }
+});
+```
+
+### Optional Parameters
+
+```typescript
+const tool2 = tool({
+  name: "optional_params",
+  description: "Tool with optional parameters",
+  parameters: z.object({
+    required: z.string(),
+    optional: z.string().optional(),
+    withDefault: z.number().default(10)
+  }),
+  execute: async ({ required, optional, withDefault }) => {
+    // ...
+  }
+});
+```
+
+### Enum Parameters
+
+```typescript
+const tool3 = tool({
+  name: "enum_params",
+  description: "Tool with enum parameters",
+  parameters: z.object({
+    action: z.enum(["create", "update", "delete"]),
+    format: z.enum(["json", "xml", "yaml"])
+  }),
+  execute: async ({ action, format }) => {
+    // ...
+  }
+});
+```
+
+### Array Parameters
+
+```typescript
+const tool4 = tool({
+  name: "array_params",
+  description: "Tool with array parameters",
+  parameters: z.object({
+    items: z.array(z.string()),
+    numbers: z.array(z.number()).min(1).max(10)
+  }),
+  execute: async ({ items, numbers }) => {
+    // ...
+  }
+});
+```
+
+### Nested Objects
+
+```typescript
+const tool5 = tool({
+  name: "nested_params",
+  description: "Tool with nested parameters",
+  parameters: z.object({
+    user: z.object({
+      name: z.string(),
+      email: z.string().email(),
+      metadata: z.object({
+        age: z.number(),
+        country: z.string()
+      })
+    })
+  }),
+  execute: async ({ user }) => {
+    // ...
+  }
+});
+```
+
+## Error Handling
+
+```typescript
+const robustTool = tool({
+  name: "robust_tool",
+  description: "Tool with error handling",
+  parameters: z.object({
+    input: z.string()
+  }),
+  execute: async ({ input }) => {
+    try {
+      const result = await riskyOperation(input);
+      return JSON.stringify({ success: true, result });
+    } catch (error) {
+      return JSON.stringify({
+        success: false,
+        error: error.message
+      });
+    }
+  }
+});
+```
+
+## Tool Metadata
+
+Access tool metadata:
+
+```typescript
+const myTool = tool({
+  name: "my_tool",
+  description: "My custom tool",
+  parameters: z.object({ input: z.string() }),
+  execute: async ({ input }) => input
+});
+
+console.log(myTool.metadata.name);        // "my_tool"
+console.log(myTool.metadata.description); // "My custom tool"
+console.log(myTool.metadata.parameters);  // JSON Schema object
+```
+
+## FunctionTool Class
+
+```typescript
+import { FunctionTool } from "@llamaindex/core/tools";
+
+const customTool = new FunctionTool(
+  async (input: { query: string }) => {
+    return `Result for: ${input.query}`;
+  },
+  {
+    name: "custom_tool",
+    description: "A custom tool",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string" }
+      },
+      required: ["query"]
+    }
+  }
+);
+```
+
+## Best Practices
+
+1. **Clear descriptions**: Help LLM understand when to use the tool
+2. **Validate inputs**: Use Zod schemas for type safety
+3. **Handle errors**: Return error messages as strings
+4. **Keep tools focused**: One tool, one purpose
+5. **Use enums**: Limit choices for categorical parameters
+6. **Document parameters**: Use `.describe()` for parameter descriptions
+7. **Return serializable data**: JSON-compatible return values
+
+## Example: Query Engine Tool
+
+```typescript
+import { VectorStoreIndex } from "llamaindex";
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+
+const queryTool = tool({
+  name: "query_documents",
+  description: "Search the document index for relevant information",
+  parameters: z.object({
+    query: z.string().describe("Search query")
+  }),
+  execute: async ({ query }) => {
+    const queryEngine = index.asQueryEngine();
+    const response = await queryEngine.query({ query });
+    return response.response;
+  }
+});
+
+const llm = new OpenAI({ model: "gpt-4" });
+
+const response = await llm.chat({
+  messages: [{ role: "user", content: "Find information about pricing" }],
+  tools: [queryTool]
+});
+```
+
+## See Also
+
+- [Core LLM API](/api/core/llms)
+- [Workflow Overview](/api/workflow/overview)
+- [Zod Documentation](https://zod.dev)

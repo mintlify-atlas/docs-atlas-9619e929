@@ -1,0 +1,498 @@
+---
+title: Settings & Configuration
+description: Configure global LLM, embeddings, and other settings in LlamaIndex.TS
+---
+
+The `Settings` object provides centralized configuration for LlamaIndex.TS. It manages global defaults for LLMs, embeddings, chunk sizes, and other parameters used throughout the framework.
+
+## Accessing Settings
+
+```typescript Import Settings
+import { Settings } from "llamaindex";
+// or from core
+import { Settings } from "@llamaindex/core/global";
+```
+
+## Global Settings Object
+
+Settings is a singleton that stores global configuration:
+
+```typescript packages/core/src/global/settings.ts
+export const Settings = {
+  llm: LLM,                    // Default language model
+  embedModel: BaseEmbedding,   // Default embedding model
+  tokenizer: Tokenizer,        // Token counting
+  chunkSize: number,           // Text chunk size
+  callbackManager: CallbackManager,  // Event handling
+  debug: boolean,              // Debug mode
+};
+```
+
+<Info>
+Settings uses **AsyncLocalStorage** internally, allowing context-aware configuration in concurrent operations.
+</Info>
+
+## Configuring the Default LLM
+
+### Basic Configuration
+
+```typescript Set global LLM
+import { Settings } from "llamaindex";
+import { OpenAI } from "@llamaindex/openai";
+
+Settings.llm = new OpenAI({
+  model: "gpt-4-turbo-preview",
+  apiKey: process.env.OPENAI_API_KEY,
+  temperature: 0.7,
+  maxTokens: 1000,
+});
+```
+
+<Warning>
+You **must** set `Settings.llm` before using any functionality that requires an LLM, or you'll get an error.
+</Warning>
+
+### LLM Configuration Error
+
+```typescript From @llamaindex/core/global/settings/llm.ts
+export function getLLM(): LLM {
+  const currentLLM = llmAsyncLocalStorage.getStore() ?? globalLLM;
+  if (!currentLLM) {
+    throw new Error(
+      "Cannot find LLM, please set `Settings.llm = ...` on the top of your code. " +
+      "Check https://ts.llamaindex.ai/docs/llamaindex/modules/models/llms for details."
+    );
+  }
+  return currentLLM;
+}
+```
+
+### Multiple LLM Providers
+
+<Tabs>
+  <Tab title="OpenAI">
+    ```typescript
+    import { OpenAI } from "@llamaindex/openai";
+    
+    Settings.llm = new OpenAI({
+      model: "gpt-4-turbo-preview",
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Anthropic">
+    ```typescript
+    import { Anthropic } from "@llamaindex/anthropic";
+    
+    Settings.llm = new Anthropic({
+      model: "claude-3-5-sonnet-20241022",
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Ollama">
+    ```typescript
+    import { Ollama } from "@llamaindex/ollama";
+    
+    Settings.llm = new Ollama({
+      model: "llama3.1",
+      baseURL: "http://localhost:11434",
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Google">
+    ```typescript
+    import { Gemini } from "@llamaindex/google";
+    
+    Settings.llm = new Gemini({
+      model: "gemini-1.5-pro",
+      apiKey: process.env.GOOGLE_API_KEY,
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## Configuring Embeddings
+
+### Basic Configuration
+
+```typescript Set global embedding model
+import { Settings } from "llamaindex";
+import { OpenAIEmbedding } from "@llamaindex/openai";
+
+Settings.embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-large",
+  apiKey: process.env.OPENAI_API_KEY,
+  dimensions: 1024,
+});
+```
+
+### Embedding Model Error
+
+```typescript From @llamaindex/core/global/settings/embedModel.ts
+export function getEmbeddedModel(): BaseEmbedding {
+  const currentEmbeddedModel =
+    embeddedModelAsyncLocalStorage.getStore() ?? globalEmbeddedModel;
+  if (!currentEmbeddedModel) {
+    throw new Error(
+      "Cannot find Embedding, please set `Settings.embedModel = ...` on the top of your code. " +
+      "Check https://ts.llamaindex.ai/docs/llamaindex/modules/models/embeddings for details."
+    );
+  }
+  return currentEmbeddedModel;
+}
+```
+
+### Multiple Embedding Providers
+
+<CodeGroup>
+
+```typescript OpenAI Embeddings
+import { OpenAIEmbedding } from "@llamaindex/openai";
+
+Settings.embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-small",
+  dimensions: 512,
+});
+```
+
+```typescript Hugging Face Embeddings
+import { HuggingFaceEmbedding } from "@llamaindex/huggingface";
+
+Settings.embedModel = new HuggingFaceEmbedding({
+  modelName: "BAAI/bge-small-en-v1.5",
+});
+```
+
+```typescript Voyage AI Embeddings
+import { VoyageEmbedding } from "@llamaindex/voyage-ai";
+
+Settings.embedModel = new VoyageEmbedding({
+  model: "voyage-2",
+  apiKey: process.env.VOYAGE_API_KEY,
+});
+```
+
+```typescript Cohere Embeddings
+import { CohereEmbedding } from "@llamaindex/cohere";
+
+Settings.embedModel = new CohereEmbedding({
+  model: "embed-english-v3.0",
+  apiKey: process.env.COHERE_API_KEY,
+});
+```
+
+</CodeGroup>
+
+## Context-Aware Settings
+
+Use `withLLM`, `withEmbedModel`, and other `with*` methods for scoped configuration:
+
+```typescript Scoped Settings
+import { Settings } from "llamaindex";
+import { OpenAI } from "@llamaindex/openai";
+import { Anthropic } from "@llamaindex/anthropic";
+
+// Global default
+Settings.llm = new OpenAI({ model: "gpt-3.5-turbo" });
+
+// Use different LLM in specific scope
+const result1 = await Settings.withLLM(
+  new OpenAI({ model: "gpt-4" }),
+  async () => {
+    // This code uses GPT-4
+    const response = await Settings.llm.chat({
+      messages: [{ role: "user", content: "Complex task" }]
+    });
+    return response;
+  }
+);
+
+// Use Anthropic in another scope
+const result2 = await Settings.withLLM(
+  new Anthropic({ model: "claude-3-opus-20240229" }),
+  async () => {
+    // This code uses Claude-3 Opus
+    const response = await Settings.llm.chat({
+      messages: [{ role: "user", content: "Another task" }]
+    });
+    return response;
+  }
+);
+
+// Outside scopes, uses global GPT-3.5-turbo
+```
+
+### All Context Methods
+
+```typescript Available with* methods
+Settings.withLLM<Result>(llm: LLM, fn: () => Result): Result
+Settings.withEmbedModel<Result>(embedModel: BaseEmbedding, fn: () => Result): Result
+Settings.withTokenizer<Result>(tokenizer: Tokenizer, fn: () => Result): Result
+Settings.withChunkSize<Result>(chunkSize: number, fn: () => Result): Result
+Settings.withCallbackManager<Result>(callbackManager: CallbackManager, fn: () => Result): Result
+```
+
+## Chunk Size Configuration
+
+Control how documents are split into chunks:
+
+```typescript Set chunk size
+import { Settings } from "llamaindex";
+
+// Set global chunk size (in tokens)
+Settings.chunkSize = 1024;
+
+// Use different chunk size in scope
+Settings.withChunkSize(512, () => {
+  // Documents will be chunked into 512 token pieces
+  const index = await VectorStoreIndex.fromDocuments(documents);
+});
+```
+
+<Note>
+The default chunk size is **1024 tokens**. Adjust based on your LLM's context window and use case.
+</Note>
+
+## Node Parser Configuration
+
+The main package extends Settings with node parser configuration:
+
+```typescript packages/llamaindex/src/Settings.ts
+import { Settings as CoreSettings } from "@llamaindex/core/global";
+import { SentenceSplitter } from "@llamaindex/core/node-parser";
+
+class GlobalSettings {
+  get nodeParser(): NodeParser {
+    if (this.#nodeParser === null) {
+      this.#nodeParser = new SentenceSplitter({
+        chunkSize: this.chunkSize,
+        chunkOverlap: this.chunkOverlap,
+      });
+    }
+    return this.#nodeParser;
+  }
+  
+  set nodeParser(nodeParser: NodeParser) {
+    this.#nodeParser = nodeParser;
+  }
+}
+
+export const Settings = new GlobalSettings();
+```
+
+### Custom Node Parser
+
+```typescript Configure custom parser
+import { Settings } from "llamaindex";
+import { SentenceSplitter } from "llamaindex";
+
+Settings.nodeParser = new SentenceSplitter({
+  chunkSize: 512,
+  chunkOverlap: 50,
+  paragraphSeparator: "\n\n",
+});
+```
+
+## Callback Manager
+
+Register event handlers for LLM events:
+
+```typescript Event handling
+import { Settings, CallbackManager } from "llamaindex";
+
+const callbackManager = new CallbackManager();
+
+callbackManager.on("llm-start", (event) => {
+  console.log("LLM started:", event);
+});
+
+callbackManager.on("llm-end", (event) => {
+  console.log("LLM finished:", event);
+});
+
+callbackManager.on("llm-stream", (event) => {
+  console.log("LLM streaming:", event.delta);
+});
+
+Settings.callbackManager = callbackManager;
+```
+
+## Debug Mode
+
+Enable debug logging:
+
+```typescript Enable debugging
+import { Settings } from "llamaindex";
+
+// Via environment variable
+process.env.DEBUG = "llamaindex:*";
+
+// Or set localStorage in browser
+if (typeof window !== "undefined") {
+  window.localStorage.debug = "llamaindex:*";
+}
+
+// Check if debug is enabled
+if (Settings.debug) {
+  console.log("Debug mode is enabled");
+}
+```
+
+```typescript From @llamaindex/core/global/settings.ts
+get debug() {
+  let debug = getEnv("DEBUG");
+  if (typeof window !== "undefined") {
+    debug ||= window.localStorage.debug;
+  }
+  return (
+    (Boolean(debug) && debug?.includes("llamaindex")) ||
+    debug === "*" ||
+    debug === "true"
+  );
+}
+```
+
+## Environment Variables
+
+<AccordionGroup>
+  <Accordion title="OpenAI">
+    ```bash
+    OPENAI_API_KEY=sk-...
+    OPENAI_MODEL=gpt-4-turbo-preview
+    ```
+  </Accordion>
+  
+  <Accordion title="Anthropic">
+    ```bash
+    ANTHROPIC_API_KEY=sk-ant-...
+    ```
+  </Accordion>
+  
+  <Accordion title="Pinecone">
+    ```bash
+    PINECONE_API_KEY=...
+    PINECONE_INDEX_NAME=my-index
+    ```
+  </Accordion>
+  
+  <Accordion title="Debug">
+    ```bash
+    DEBUG=llamaindex:*  # Enable all debug logs
+    DEBUG=*             # Enable all debug logs globally
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Complete Configuration Example
+
+```typescript Full setup
+import { Settings } from "llamaindex";
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+import { SentenceSplitter } from "llamaindex";
+
+// Configure LLM
+Settings.llm = new OpenAI({
+  model: "gpt-4-turbo-preview",
+  apiKey: process.env.OPENAI_API_KEY,
+  temperature: 0.7,
+  maxTokens: 2000,
+});
+
+// Configure Embeddings
+Settings.embedModel = new OpenAIEmbedding({
+  model: "text-embedding-3-large",
+  apiKey: process.env.OPENAI_API_KEY,
+  dimensions: 1024,
+});
+
+// Configure Node Parser
+Settings.nodeParser = new SentenceSplitter({
+  chunkSize: 1024,
+  chunkOverlap: 200,
+});
+
+// Configure Chunk Size
+Settings.chunkSize = 1024;
+
+// Now use the framework - Settings will be used automatically
+import { VectorStoreIndex, Document } from "llamaindex";
+
+const documents = [
+  new Document({ text: "Your content here" }),
+];
+
+// Uses Settings.llm, Settings.embedModel, Settings.nodeParser
+const index = await VectorStoreIndex.fromDocuments(documents);
+const queryEngine = index.asQueryEngine();
+
+const response = await queryEngine.query({
+  query: "What is this about?"
+});
+```
+
+## Settings in Different Contexts
+
+### Index Creation
+
+```typescript Settings used in indexing
+const index = await VectorStoreIndex.fromDocuments(documents);
+// Uses:
+// - Settings.nodeParser to chunk documents
+// - Settings.embedModel to create embeddings
+```
+
+### Query Engine
+
+```typescript Settings used in queries
+const queryEngine = index.asQueryEngine();
+const response = await queryEngine.query({ query: "..." });
+// Uses:
+// - Settings.llm to generate responses
+// - Settings.embedModel to embed the query
+```
+
+### Agents
+
+```typescript Settings used in agents
+import { OpenAIAgent } from "@llamaindex/openai";
+
+const agent = new OpenAIAgent({
+  llm: Settings.llm,  // Can use Settings.llm explicitly
+  tools: [...],
+});
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Set Early" icon="bolt">
+    Configure Settings at the top of your application before using any LlamaIndex functionality
+  </Card>
+  
+  <Card title="Environment Variables" icon="key">
+    Use environment variables for API keys - never hardcode secrets
+  </Card>
+  
+  <Card title="Context Scoping" icon="layer-group">
+    Use `with*` methods for temporary configuration changes in specific scopes
+  </Card>
+  
+  <Card title="Consistent Models" icon="check">
+    Use the same embedding model for indexing and querying to ensure compatibility
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Data Flow" icon="arrows-turn-right" href="/core/data-flow">
+    Learn how data flows through the ingestion and query pipeline
+  </Card>
+  <Card title="LLM Configuration" icon="robot" href="/modules/models/llms">
+    Explore detailed LLM provider configuration options
+  </Card>
+</CardGroup>

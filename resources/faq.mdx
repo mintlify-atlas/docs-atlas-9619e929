@@ -1,0 +1,556 @@
+---
+title: "Frequently Asked Questions"
+description: "Common questions about LlamaIndex.TS"
+---
+
+Find answers to common questions about LlamaIndex.TS.
+
+## General Questions
+
+<AccordionGroup>
+  <Accordion title="What is LlamaIndex.TS?">
+    LlamaIndex.TS is a TypeScript/JavaScript data framework for building LLM applications. It helps you:
+
+    - Load and process data from various sources
+    - Create vector embeddings and indices
+    - Build RAG (Retrieval Augmented Generation) applications
+    - Integrate with multiple LLM providers
+    - Create chat engines and query engines
+    - Build agentic workflows
+
+    It's the TypeScript port of [LlamaIndex Python](https://github.com/run-llama/llama_index), designed to work across multiple JavaScript runtimes including Node.js, Deno, Bun, and edge environments.
+  </Accordion>
+
+  <Accordion title="What's the difference between LlamaIndex.TS and LlamaIndex Python?">
+    Both frameworks share the same core concepts but have some differences:
+
+    **Similarities:**
+    - Same core abstractions (indices, query engines, chat engines)
+    - Similar API design and patterns
+    - Support for the same LLM providers
+    - RAG and agent capabilities
+
+    **Differences:**
+    - Language: TypeScript vs Python
+    - Package structure: Modular npm packages vs Python namespace packages
+    - Runtime support: Multi-runtime JS vs Python only
+    - Feature parity: Python has more features currently
+
+    See the [Migration from Python](/migration/from-python) guide for detailed comparisons.
+  </Accordion>
+
+  <Accordion title="Do I need to know Python to use LlamaIndex.TS?">
+    No! LlamaIndex.TS is a standalone TypeScript/JavaScript library. While the concepts are similar to the Python version, you don't need any Python knowledge to use it.
+
+    If you're coming from Python, check out the [Migration from Python](/migration/from-python) guide.
+  </Accordion>
+
+  <Accordion title="Which JavaScript runtimes are supported?">
+    LlamaIndex.TS supports multiple JavaScript runtimes:
+
+    **Fully Supported:**
+    - Node.js >= 18.0.0 ✅
+    - Deno ✅
+    - Bun ✅
+    - Nitro ✅
+
+    **Supported with Limitations:**
+    - Vercel Edge Runtime ✅ (limited file system access)
+    - Cloudflare Workers ✅ (limited file system access)
+
+    **Not Supported:**
+    - Browser ❌ (due to lack of AsyncLocalStorage-like APIs)
+
+    The framework uses conditional exports to provide runtime-specific entry points.
+  </Accordion>
+
+  <Accordion title="Can I use LlamaIndex.TS in the browser?">
+    Browser support is currently limited due to the lack of support for AsyncLocalStorage-like APIs in browsers. However, work is ongoing to improve browser compatibility.
+
+    For now, we recommend using LlamaIndex.TS on the server-side (Node.js, edge runtimes) and calling it from your browser via API routes.
+  </Accordion>
+</AccordionGroup>
+
+## Installation & Setup
+
+<AccordionGroup>
+  <Accordion title="How do I install LlamaIndex.TS?">
+    Install the core package:
+
+    ```bash
+    npm install llamaindex
+    ```
+
+    You'll also need provider packages:
+
+    ```bash
+    # For OpenAI
+    npm install @llamaindex/openai
+
+    # For vector stores
+    npm install @llamaindex/pinecone
+    npm install @llamaindex/qdrant
+    ```
+
+    See the [Getting Started](/installation) guide for details.
+  </Accordion>
+
+  <Accordion title="Do I need an OpenAI API key?">
+    Only if you want to use OpenAI models. LlamaIndex.TS supports many LLM providers:
+
+    - **OpenAI** (GPT-4, GPT-3.5)
+    - **Anthropic** (Claude)
+    - **Google** (Gemini)
+    - **Ollama** (Local models)
+    - **Groq**, **Mistral**, **Together AI**, and more
+
+    You can also use local models with Ollama:
+
+    ```typescript
+    import { Ollama } from "@llamaindex/ollama";
+    
+    Settings.llm = new Ollama({ model: "llama3" });
+    ```
+  </Accordion>
+
+  <Accordion title="What are the minimum requirements?">
+    **Required:**
+    - Node.js >= 18.0.0 (or another supported runtime)
+    - npm, pnpm, or yarn
+
+    **Recommended:**
+    - TypeScript for type safety
+    - An LLM provider API key (OpenAI, Anthropic, etc.) or local Ollama setup
+  </Accordion>
+
+  <Accordion title="Can I use it with Next.js, Remix, or other frameworks?">
+    Yes! LlamaIndex.TS works with all modern JavaScript frameworks:
+
+    - **Next.js** (App Router and Pages Router)
+    - **Remix**
+    - **SvelteKit**
+    - **Nuxt**
+    - **Astro**
+    - **Express**
+    - And more!
+
+    For Next.js, use the `withLlamaIndex` helper:
+
+    ```javascript
+    // next.config.js
+    const { withLlamaIndex } = require("llamaindex/next");
+
+    module.exports = withLlamaIndex({
+      // Your Next.js config
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Usage Questions
+
+<AccordionGroup>
+  <Accordion title="How do I load my own data?">
+    LlamaIndex.TS provides several ways to load data:
+
+    **1. SimpleDirectoryReader (for files):**
+    ```typescript
+    import { SimpleDirectoryReader } from "llamaindex";
+
+    const reader = new SimpleDirectoryReader();
+    const documents = await reader.loadData({ directoryPath: "./data" });
+    ```
+
+    **2. Specialized readers:**
+    ```typescript
+    import { PDFReader, DocxReader } from "@llamaindex/readers";
+
+    const pdfReader = new PDFReader();
+    const docs = await pdfReader.loadData("document.pdf");
+    ```
+
+    **3. Manual document creation:**
+    ```typescript
+    import { Document } from "llamaindex";
+
+    const doc = new Document({ text: "Your content here" });
+    ```
+  </Accordion>
+
+  <Accordion title="How do I query my data?">
+    Create an index and query it:
+
+    ```typescript
+    import { VectorStoreIndex } from "llamaindex";
+
+    // Create index
+    const index = await VectorStoreIndex.fromDocuments(documents);
+
+    // Query
+    const queryEngine = index.asQueryEngine();
+    const response = await queryEngine.query({
+      query: "What is LlamaIndex?",
+    });
+
+    console.log(response.toString());
+    ```
+  </Accordion>
+
+  <Accordion title="How do I build a chatbot?">
+    Use a chat engine:
+
+    ```typescript
+    import { VectorStoreIndex } from "llamaindex";
+
+    const index = await VectorStoreIndex.fromDocuments(documents);
+    const chatEngine = index.asChatEngine();
+
+    // Chat with context
+    const response = await chatEngine.chat({
+      message: "What does the document say about X?",
+    });
+
+    console.log(response.toString());
+    ```
+
+    Chat engines maintain conversation history automatically.
+  </Accordion>
+
+  <Accordion title="How do I use a different LLM provider?">
+    Configure `Settings.llm`:
+
+    ```typescript
+    import { Settings } from "llamaindex";
+
+    // Anthropic
+    import { Anthropic } from "@llamaindex/anthropic";
+    Settings.llm = new Anthropic({ model: "claude-3-sonnet" });
+
+    // Google Gemini
+    import { Gemini } from "@llamaindex/google";
+    Settings.llm = new Gemini({ model: "gemini-pro" });
+
+    // Ollama (local)
+    import { Ollama } from "@llamaindex/ollama";
+    Settings.llm = new Ollama({ model: "llama3" });
+    ```
+  </Accordion>
+
+  <Accordion title="How do I use a vector database?">
+    Install the vector store provider and use it:
+
+    ```typescript
+    import { VectorStoreIndex } from "llamaindex";
+    import { PineconeVectorStore } from "@llamaindex/pinecone";
+
+    const vectorStore = new PineconeVectorStore({
+      indexName: "my-index",
+      apiKey: process.env.PINECONE_API_KEY,
+    });
+
+    const index = await VectorStoreIndex.fromDocuments(documents, {
+      vectorStore,
+    });
+    ```
+
+    Supported vector stores:
+    - Pinecone, Qdrant, Chroma, Weaviate
+    - MongoDB, PostgreSQL (pgvector)
+    - Supabase, Milvus, Astra
+    - And more!
+  </Accordion>
+
+  <Accordion title="How do I stream responses?">
+    Set `stream: true` in your query:
+
+    ```typescript
+    const stream = await queryEngine.query({
+      query: "What is LlamaIndex?",
+      stream: true,
+    });
+
+    for await (const chunk of stream) {
+      process.stdout.write(chunk.response);
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="I'm getting 'Module not found' errors">
+    This usually happens due to:
+
+    1. **Missing installation:**
+    ```bash
+    npm install llamaindex @llamaindex/openai
+    ```
+
+    2. **TypeScript configuration:**
+    ```json
+    {
+      "compilerOptions": {
+        "moduleResolution": "bundler"
+      }
+    }
+    ```
+
+    3. **Build issues:**
+    ```bash
+    rm -rf node_modules package-lock.json
+    npm install
+    ```
+
+    See the [Troubleshooting](/resources/troubleshooting) guide for more.
+  </Accordion>
+
+  <Accordion title="Why am I getting API rate limit errors?">
+    **Solutions:**
+
+    1. **Add retry logic:**
+    ```typescript
+    import { OpenAI } from "@llamaindex/openai";
+
+    Settings.llm = new OpenAI({
+      maxRetries: 3,
+      timeout: 60000,
+    });
+    ```
+
+    2. **Use a smaller model:**
+    ```typescript
+    Settings.llm = new OpenAI({ model: "gpt-3.5-turbo" });
+    ```
+
+    3. **Process in batches:**
+    ```typescript
+    for (let i = 0; i < documents.length; i += 10) {
+      const batch = documents.slice(i, i + 10);
+      await index.insert(batch);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="My embeddings are too slow. How can I speed them up?">
+    **Options:**
+
+    1. **Use batch embedding:**
+    ```typescript
+    import { OpenAIEmbedding } from "@llamaindex/openai";
+
+    Settings.embedModel = new OpenAIEmbedding({
+      batchSize: 100,
+    });
+    ```
+
+    2. **Use a faster model:**
+    ```typescript
+    Settings.embedModel = new OpenAIEmbedding({
+      model: "text-embedding-3-small", // Faster than large
+    });
+    ```
+
+    3. **Cache embeddings in a vector store.**
+  </Accordion>
+
+  <Accordion title="How do I debug issues?">
+    Enable debug mode:
+
+    ```typescript
+    import { Settings } from "llamaindex";
+
+    Settings.debug = true;
+    ```
+
+    This shows detailed logs about:
+    - API calls
+    - Document processing
+    - Embedding generation
+    - Query execution
+  </Accordion>
+</AccordionGroup>
+
+## Advanced Topics
+
+<AccordionGroup>
+  <Accordion title="Can I use custom embedding models?">
+    Yes! Extend the base `BaseEmbedding` class:
+
+    ```typescript
+    import { BaseEmbedding } from "@llamaindex/core/embeddings";
+
+    class CustomEmbedding extends BaseEmbedding {
+      async getTextEmbedding(text: string): Promise<number[]> {
+        // Your embedding logic
+        return [0.1, 0.2, 0.3, ...];
+      }
+    }
+
+    Settings.embedModel = new CustomEmbedding();
+    ```
+  </Accordion>
+
+  <Accordion title="How do I build multi-agent systems?">
+    Use the `@llamaindex/workflow` package:
+
+    ```typescript
+    import { AgentWorkflow } from "@llamaindex/workflow";
+
+    const agent1 = new AgentWorkflow({
+      name: "researcher",
+      tools: [searchTool],
+    });
+
+    const agent2 = new AgentWorkflow({
+      name: "writer",
+      tools: [writeTool],
+    });
+
+    // Orchestrate agents
+    ```
+  </Accordion>
+
+  <Accordion title="Can I use function calling with tools?">
+    Yes! Define tools and use them with agents:
+
+    ```typescript
+    import { FunctionTool } from "@llamaindex/core/tools";
+    import { AgentWorkflow } from "@llamaindex/workflow";
+
+    const weatherTool = FunctionTool.from(
+      ({ city }: { city: string }) => {
+        return `Weather in ${city}: Sunny, 72°F`;
+      },
+      {
+        name: "get_weather",
+        description: "Get weather for a city",
+        parameters: {
+          type: "object",
+          properties: {
+            city: { type: "string" },
+          },
+        },
+      },
+    );
+
+    const agent = new AgentWorkflow({
+      tools: [weatherTool],
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="How do I handle large documents?">
+    **Strategies:**
+
+    1. **Chunk documents:**
+    ```typescript
+    import { SentenceSplitter } from "llamaindex";
+
+    const splitter = new SentenceSplitter({
+      chunkSize: 512,
+      chunkOverlap: 50,
+    });
+    const nodes = splitter.getNodesFromDocuments(documents);
+    ```
+
+    2. **Process in batches:**
+    ```typescript
+    for (let i = 0; i < documents.length; i += 10) {
+      await index.insert(documents.slice(i, i + 10));
+    }
+    ```
+
+    3. **Increase Node.js memory:**
+    ```bash
+    node --max-old-space-size=4096 your-script.js
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Cost & Performance
+
+<AccordionGroup>
+  <Accordion title="How much does it cost to use LlamaIndex.TS?">
+    LlamaIndex.TS itself is free and open-source. Costs come from:
+
+    **LLM API calls:**
+    - OpenAI: ~$0.03 per 1K tokens (GPT-4)
+    - Anthropic: ~$0.015 per 1K tokens (Claude)
+    - Or use free local models with Ollama
+
+    **Embedding API calls:**
+    - OpenAI: ~$0.0001 per 1K tokens
+
+    **Vector database:**
+    - Varies by provider (some have free tiers)
+
+    **Cost optimization tips:**
+    - Use smaller models (gpt-3.5-turbo vs gpt-4)
+    - Reduce chunk size
+    - Cache embeddings
+    - Use local models
+  </Accordion>
+
+  <Accordion title="Can I use local models to avoid API costs?">
+    Yes! Use Ollama for completely free, local inference:
+
+    ```bash
+    # Install Ollama
+    # https://ollama.ai
+
+    # Pull a model
+    ollama pull llama3
+    ```
+
+    ```typescript
+    import { Ollama } from "@llamaindex/ollama";
+
+    Settings.llm = new Ollama({ model: "llama3" });
+    Settings.embedModel = new Ollama({ model: "nomic-embed-text" });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Contributing & Community
+
+<AccordionGroup>
+  <Accordion title="How can I contribute to LlamaIndex.TS?">
+    We welcome contributions! You can:
+
+    - Fix bugs or add features
+    - Improve documentation
+    - Add examples
+    - Help others in Discord
+    - Report issues
+
+    See the [Contributing Guide](/resources/contributing) for details.
+  </Accordion>
+
+  <Accordion title="Where can I get help?">
+    **Community support:**
+    - [Discord](https://discord.com/invite/eN6D2HQ4aX) - Real-time chat
+    - [GitHub Discussions](https://github.com/run-llama/LlamaIndexTS/discussions) - Q&A
+    - [GitHub Issues](https://github.com/run-llama/LlamaIndexTS/issues) - Bug reports
+
+    See the [Community](/resources/community) page for more.
+  </Accordion>
+</AccordionGroup>
+
+## Still Have Questions?
+
+<CardGroup cols={2}>
+  <Card title="Discord" icon="discord" href="https://discord.com/invite/eN6D2HQ4aX">
+    Join our Discord community
+  </Card>
+  <Card title="GitHub Discussions" icon="github" href="https://github.com/run-llama/LlamaIndexTS/discussions">
+    Ask on GitHub Discussions
+  </Card>
+  <Card title="Documentation" icon="book" href="/installation">
+    Browse the full documentation
+  </Card>
+  <Card title="Examples" icon="code" href="https://github.com/run-llama/LlamaIndexTS/tree/main/examples">
+    Check out code examples
+  </Card>
+</CardGroup>

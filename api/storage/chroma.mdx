@@ -1,0 +1,329 @@
+---
+title: "Chroma"
+description: "ChromaDB vector database integration"
+icon: "database"
+---
+
+## Overview
+
+Chroma is an open-source embedding database that can run locally or as a server. It's designed for simplicity and ease of use.
+
+## Installation
+
+```bash
+npm install @llamaindex/chroma chromadb
+```
+
+## Basic Usage
+
+```typescript
+import { ChromaVectorStore } from "@llamaindex/chroma";
+import { VectorStoreIndex, Document } from "llamaindex";
+
+const vectorStore = new ChromaVectorStore({
+  collectionName: "my-collection"
+});
+
+const documents = [
+  new Document({ text: "LlamaIndex is a data framework." }),
+  new Document({ text: "Chroma is a vector database." })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+const queryEngine = index.asQueryEngine();
+const response = await queryEngine.query({
+  query: "What is Chroma?"
+});
+```
+
+## Constructor Options
+
+<ParamField path="collectionName" type="string" default="llamaindex">
+  Name of the Chroma collection
+</ParamField>
+
+<ParamField path="chromaClient" type="ChromaClient">
+  Custom Chroma client instance
+</ParamField>
+
+<ParamField path="host" type="string" default="http://localhost:8000">
+  Chroma server URL
+</ParamField>
+
+<ParamField path="chunkSize" type="number" default={100}>
+  Batch size for operations
+</ParamField>
+
+## Setup Options
+
+### In-Memory (Default)
+
+```typescript
+const vectorStore = new ChromaVectorStore({
+  collectionName: "my-collection"
+});
+// Runs in-memory, data not persisted
+```
+
+### Persistent Local Storage
+
+```typescript
+import { ChromaClient } from "chromadb";
+
+const client = new ChromaClient({
+  path: "./chroma-data"  // Local persistence
+});
+
+const vectorStore = new ChromaVectorStore({
+  collectionName: "my-collection",
+  chromaClient: client
+});
+```
+
+### Remote Server
+
+```typescript
+import { ChromaClient } from "chromadb";
+
+const client = new ChromaClient({
+  path: "http://chroma-server:8000"
+});
+
+const vectorStore = new ChromaVectorStore({
+  collectionName: "my-collection",
+  chromaClient: client
+});
+```
+
+## Running Chroma Server
+
+### Docker
+
+```bash
+docker pull chromadb/chroma
+docker run -p 8000:8000 chromadb/chroma
+```
+
+### Python
+
+```bash
+pip install chromadb
+chroma run --host localhost --port 8000
+```
+
+## Querying
+
+### Basic Query
+
+```typescript
+const index = await VectorStoreIndex.fromVectorStore(vectorStore);
+
+const retriever = index.asRetriever({
+  similarityTopK: 5
+});
+
+const nodes = await retriever.retrieve("search query");
+```
+
+### Metadata Filtering
+
+```typescript
+const documents = [
+  new Document({
+    text: "Document 1",
+    metadata: { category: "tech", year: 2023 }
+  }),
+  new Document({
+    text: "Document 2",
+    metadata: { category: "science", year: 2024 }
+  })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+const retriever = index.asRetriever({
+  filters: {
+    category: "tech"
+  }
+});
+```
+
+## Collections
+
+Manage multiple collections:
+
+```typescript
+const docsStore = new ChromaVectorStore({
+  collectionName: "documents"
+});
+
+const codeStore = new ChromaVectorStore({
+  collectionName: "code"
+});
+
+const chatStore = new ChromaVectorStore({
+  collectionName: "chat-history"
+});
+```
+
+## Managing Data
+
+### Add Documents
+
+```typescript
+const newDoc = new Document({ text: "New content" });
+await index.insert(newDoc);
+```
+
+### Delete Documents
+
+```typescript
+await index.deleteRef(docId);
+```
+
+### Clear Collection
+
+```typescript
+const client = await vectorStore.client();
+await client.deleteCollection({ name: "my-collection" });
+```
+
+## Loading Existing Collection
+
+```typescript
+import { VectorStoreIndex } from "llamaindex";
+import { ChromaVectorStore } from "@llamaindex/chroma";
+
+const vectorStore = new ChromaVectorStore({
+  collectionName: "existing-collection"
+});
+
+const index = await VectorStoreIndex.fromVectorStore(vectorStore);
+```
+
+## Distance Metrics
+
+Chroma supports different distance metrics:
+
+```typescript
+import { ChromaClient } from "chromadb";
+
+const client = new ChromaClient();
+
+const collection = await client.createCollection({
+  name: "my-collection",
+  metadata: {
+    "hnsw:space": "cosine"  // or "l2", "ip" (inner product)
+  }
+});
+```
+
+## Embedding Functions
+
+Use custom embedding functions:
+
+```typescript
+import { OpenAIEmbeddingFunction } from "chromadb";
+
+const embedder = new OpenAIEmbeddingFunction({
+  api_key: process.env.OPENAI_API_KEY,
+  model_name: "text-embedding-3-small"
+});
+
+const collection = await client.createCollection({
+  name: "my-collection",
+  embeddingFunction: embedder
+});
+```
+
+## Complete Example
+
+```typescript
+import { ChromaVectorStore } from "@llamaindex/chroma";
+import { VectorStoreIndex, Document, Settings } from "llamaindex";
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+import { ChromaClient } from "chromadb";
+
+// Configure settings
+Settings.llm = new OpenAI({ model: "gpt-4" });
+Settings.embedModel = new OpenAIEmbedding();
+
+// Create persistent client
+const client = new ChromaClient({
+  path: "./chroma-data"
+});
+
+// Create vector store
+const vectorStore = new ChromaVectorStore({
+  collectionName: "my-docs",
+  chromaClient: client
+});
+
+// Load documents
+const documents = [
+  new Document({
+    text: "LlamaIndex documentation...",
+    metadata: { source: "docs", page: 1 }
+  })
+];
+
+// Build index
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  storageContext: { vectorStore }
+});
+
+// Query
+const queryEngine = index.asQueryEngine();
+const response = await queryEngine.query({
+  query: "What is LlamaIndex?"
+});
+
+console.log(response.response);
+```
+
+## Best Practices
+
+1. **Use persistent storage**: Enable data persistence for production
+2. **Choose appropriate metric**: Cosine for most text use cases
+3. **Organize with collections**: Separate data by use case or environment
+4. **Run server for production**: Use Chroma server for scalability
+5. **Monitor memory**: In-memory mode limited by available RAM
+
+## Troubleshooting
+
+### Connection Error
+
+```typescript
+try {
+  const vectorStore = new ChromaVectorStore({
+    collectionName: "test",
+    host: "http://localhost:8000"
+  });
+  await vectorStore.client();
+} catch (error) {
+  console.error("Cannot connect to Chroma:", error.message);
+  console.log("Make sure Chroma server is running on port 8000");
+}
+```
+
+### Collection Already Exists
+
+```typescript
+const client = new ChromaClient();
+
+// Get or create collection
+const collection = await client.getOrCreateCollection({
+  name: "my-collection"
+});
+```
+
+## See Also
+
+- [ChromaDB Documentation](https://docs.trychroma.com)
+- [Vector Store Index](/api/llamaindex/indices)
+- [Core Schema](/api/core/schema)

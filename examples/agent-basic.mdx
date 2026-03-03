@@ -1,0 +1,337 @@
+---
+title: Basic Agent Example
+description: Create an AI agent with tool calling capabilities
+---
+
+This example demonstrates how to build an AI agent that can use tools to accomplish tasks.
+
+## Overview
+
+Agents are AI systems that can:
+- Reason about which tools to use
+- Call functions with appropriate parameters
+- Maintain conversation context
+- Make decisions based on tool results
+
+This example shows how to create a simple weather agent using the modern `@llamaindex/workflow` package.
+
+## Complete Example
+
+```typescript title="single-agent.ts"
+import { openai } from "@llamaindex/openai";
+import { agent } from "@llamaindex/workflow";
+import { tool } from "llamaindex";
+import { z } from "zod";
+
+// Define a weather tool
+const getWeatherTool = tool({
+  name: "get_weather",
+  description: "Get the current weather for a location",
+  parameters: z.object({
+    address: z.string().describe("The address"),
+  }),
+  execute: ({ address }) => `${address} is in a sunny location!`,
+});
+
+async function main() {
+  // Create agent with tool
+  const weatherAgent = agent({
+    llm: openai({
+      model: "gpt-4o",
+    }),
+    tools: [getWeatherTool],
+    verbose: false,
+  });
+
+  // First query
+  const result = await weatherAgent.run(
+    "What's the weather like in San Francisco?",
+  );
+  console.log(JSON.stringify(result, null, 2));
+
+  // Reuse state from previous run
+  const caResult = await weatherAgent.run("Compare it with California?", {
+    state: result.data.state,
+  });
+  console.log(JSON.stringify(caResult, null, 2));
+  console.log("assistant message:", caResult.data.message);
+}
+
+main().catch((error) => {
+  console.error("Error:", error);
+});
+```
+
+## Step-by-Step Explanation
+
+### 1. Define Tools
+
+Tools are functions the agent can call:
+
+```typescript
+import { tool } from "llamaindex";
+import { z } from "zod";
+
+const getWeatherTool = tool({
+  name: "get_weather",
+  description: "Get the current weather for a location",
+  parameters: z.object({
+    address: z.string().describe("The address"),
+  }),
+  execute: ({ address }) => {
+    // Your tool logic here
+    return `${address} is in a sunny location!`;
+  },
+});
+```
+
+**Key components:**
+- `name` - Unique identifier for the tool
+- `description` - Helps the LLM understand when to use the tool
+- `parameters` - Zod schema defining input parameters
+- `execute` - The actual function implementation
+
+### 2. Create the Agent
+
+```typescript
+import { openai } from "@llamaindex/openai";
+import { agent } from "@llamaindex/workflow";
+
+const weatherAgent = agent({
+  llm: openai({
+    model: "gpt-4o",
+  }),
+  tools: [getWeatherTool],
+  verbose: false, // Set to true for detailed logging
+});
+```
+
+### 3. Run the Agent
+
+```typescript
+const result = await weatherAgent.run(
+  "What's the weather like in San Francisco?",
+);
+console.log(result.data.message);
+```
+
+### 4. Maintain State
+
+Reuse conversation context for follow-up questions:
+
+```typescript
+const followUp = await weatherAgent.run(
+  "What about Los Angeles?",
+  {
+    state: result.data.state,
+  }
+);
+```
+
+## More Tool Examples
+
+### User Information Tool
+
+```typescript
+const getUserInfoTool = tool({
+  name: "get_user_info",
+  description: "Get user info",
+  parameters: z.object({
+    userId: z.string().describe("The user id"),
+  }),
+  execute: ({ userId }) =>
+    `Name: Alex; Address: 1234 Main St, CA; User ID: ${userId}`,
+});
+```
+
+### Random ID Generator
+
+```typescript
+const getCurrentIDTool = tool({
+  name: "get_user_id",
+  description: "Get a random user id",
+  parameters: z.object({}),
+  execute: () => {
+    console.log("Getting user id...");
+    return crypto.randomUUID();
+  },
+});
+```
+
+### Query Engine as a Tool
+
+Use a RAG query engine as a tool:
+
+```typescript
+import { VectorStoreIndex, Document } from "llamaindex";
+
+// Create your index
+const index = await VectorStoreIndex.fromDocuments([document]);
+
+// Convert to a tool
+const queryTool = index.queryTool({
+  options: {
+    similarityTopK: 3,
+  },
+  metadata: {
+    name: "document_search",
+    description: "Search through company documents",
+  },
+});
+
+// Use in agent
+const agent = agent({
+  llm: openai({ model: "gpt-4o" }),
+  tools: [queryTool],
+});
+```
+
+## Using Different LLM Providers
+
+### Anthropic (Claude)
+
+```typescript
+import { claude } from "@llamaindex/anthropic";
+
+const agent = agent({
+  llm: claude({
+    model: "claude-3-5-sonnet-20241022",
+  }),
+  tools: [getWeatherTool],
+});
+```
+
+### Ollama (Local Models)
+
+```typescript
+import { ollama } from "@llamaindex/ollama";
+
+const agent = agent({
+  llm: ollama({
+    model: "llama3.1",
+  }),
+  tools: [getWeatherTool],
+});
+```
+
+## Running the Example
+
+1. Install dependencies:
+
+```bash
+npm install llamaindex @llamaindex/openai @llamaindex/workflow zod
+```
+
+2. Set your API key:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+3. Run the example:
+
+```bash
+npx tsx single-agent.ts
+```
+
+## Expected Output
+
+The agent will:
+1. Receive your question
+2. Decide to use the `get_weather` tool
+3. Call the tool with extracted parameters
+4. Use the tool result to formulate a response
+
+```json
+{
+  "data": {
+    "message": "The weather in San Francisco is sunny!",
+    "state": { /* conversation state */ }
+  }
+}
+```
+
+## Advanced Features
+
+### Multiple Agents
+
+Coordinate multiple specialized agents:
+
+```typescript
+const weatherAgent = agent({
+  llm: openai({ model: "gpt-4o" }),
+  tools: [getWeatherTool],
+});
+
+const newsAgent = agent({
+  llm: openai({ model: "gpt-4o" }),
+  tools: [getNewsTool],
+});
+
+// Orchestrate between agents
+const orchestrator = agent({
+  llm: openai({ model: "gpt-4o" }),
+  tools: [
+    createAgentTool(weatherAgent, "weather"),
+    createAgentTool(newsAgent, "news"),
+  ],
+});
+```
+
+### Memory and Context
+
+Add memory to your agents:
+
+```typescript
+import { ChatMemoryBuffer } from "llamaindex";
+
+const memory = new ChatMemoryBuffer({ tokenLimit: 3000 });
+
+const agent = agent({
+  llm: openai({ model: "gpt-4o" }),
+  tools: [getWeatherTool],
+  chatHistory: memory,
+});
+```
+
+### Streaming Responses
+
+Stream agent responses in real-time:
+
+```typescript
+const stream = await weatherAgent.run(
+  "What's the weather?",
+  { stream: true }
+);
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk);
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Workflows" href="/examples/workflow-basic" icon="diagram-project">
+    Build complex multi-step workflows
+  </Card>
+  
+  <Card title="Agent Memory" href="/guides/agents" icon="brain">
+    Add memory and context to agents
+  </Card>
+  
+  <Card title="Custom Tools" href="/guides/tools" icon="wrench">
+    Create sophisticated custom tools
+  </Card>
+  
+  <Card title="Multi-Agent" href="/guides/multi-agent" icon="users">
+    Coordinate multiple agents
+  </Card>
+</CardGroup>
+
+## Related Examples
+
+- **[Multiple Agents](https://github.com/run-llama/LlamaIndexTS/blob/main/packages/llamaindex/examples/agents/agent/multiple-agents.ts)** - Multi-agent coordination
+- **[Blog Writer](https://github.com/run-llama/LlamaIndexTS/blob/main/packages/llamaindex/examples/agents/agent/blog-writer.ts)** - Content generation agent
+- **[Agent Memory](https://github.com/run-llama/LlamaIndexTS/blob/main/packages/llamaindex/examples/agents/memory/agent-memory.ts)** - Memory management
+- **[MCP Tools](https://github.com/run-llama/LlamaIndexTS/blob/main/packages/llamaindex/examples/agents/agent/mcp-tools.ts)** - Model Context Protocol integration

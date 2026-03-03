@@ -1,80 +1,251 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Build your first RAG application with LlamaIndex.TS in minutes
 ---
 
-## Get started in three steps
+# Quickstart
 
-Get your documentation site running locally and make your first customization.
+Get up and running with LlamaIndex.TS in just a few minutes. This guide will walk you through creating your first Retrieval-Augmented Generation (RAG) application.
 
-### Step 1: Set up your local environment
+## What You'll Build
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+You'll create a simple application that:
+1. Loads a text document
+2. Creates a searchable index from the document
+3. Answers questions using the indexed data
 
-### Step 2: Deploy your changes
+<Steps>
+  <Step title="Install LlamaIndex.TS">
+    First, install the main package and an LLM provider. We'll use OpenAI for this example.
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    <CodeGroup>
+      ```bash npm
+      npm install llamaindex @llamaindex/openai
+      ```
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+      ```bash pnpm
+      pnpm install llamaindex @llamaindex/openai
+      ```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+      ```bash yarn
+      yarn add llamaindex @llamaindex/openai
+      ```
+    </CodeGroup>
 
-### Step 3: Go live
+    <Note>
+      The core `llamaindex` package provides the framework, while `@llamaindex/openai` adds OpenAI LLM and embedding support.
+    </Note>
+  </Step>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+  <Step title="Set Up Your API Key">
+    You'll need an OpenAI API key. Get one at [platform.openai.com/api-keys](https://platform.openai.com/account/api-keys).
 
-## Next steps
+    Set your API key as an environment variable:
 
-Now that you have your docs running, explore these key features:
+    ```bash
+    export OPENAI_API_KEY="sk-..."
+    ```
 
-<CardGroup cols={2}>
+    Or create a `.env` file:
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+    ```bash .env
+    OPENAI_API_KEY=sk-...
+    ```
+  </Step>
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+  <Step title="Create Your First RAG Application">
+    Create a file called `app.ts` with the following code:
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
+    ```typescript app.ts
+    import { Document, VectorStoreIndex } from "llamaindex";
+    import fs from "node:fs/promises";
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
+    async function main() {
+      // Load your document
+      const essay = await fs.readFile("./data.txt", "utf-8");
+      const document = new Document({ text: essay });
 
-</CardGroup>
+      // Create an index from your document
+      const index = await VectorStoreIndex.fromDocuments([document]);
+
+      // Create a query engine
+      const queryEngine = index.asQueryEngine();
+
+      // Query your data
+      const response = await queryEngine.query({
+        query: "What is the main topic of this document?",
+      });
+
+      console.log(response.toString());
+    }
+
+    main().catch(console.error);
+    ```
+
+    <Tip>
+      Replace `"./data.txt"` with the path to any text file you want to query.
+    </Tip>
+  </Step>
+
+  <Step title="Run Your Application">
+    Execute your application:
+
+    ```bash
+    npx tsx app.ts
+    ```
+
+    Or if using Node.js with TypeScript:
+
+    ```bash
+    node --loader tsx app.ts
+    ```
+
+    You should see a response generated from your document!
+  </Step>
+</Steps>
+
+## Interactive Chat Example
+
+Let's enhance the example to create an interactive chat interface:
+
+```typescript chat.ts
+import {
+  ContextChatEngine,
+  Document,
+  Settings,
+  VectorStoreIndex,
+} from "llamaindex";
+import { createInterface } from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
+import fs from "node:fs/promises";
+
+// Configure chunk size for better results
+Settings.chunkSize = 512;
+
+async function main() {
+  // Load your document
+  const essay = await fs.readFile("./data.txt", "utf-8");
+  const document = new Document({ text: essay });
+
+  // Create index and retriever
+  const index = await VectorStoreIndex.fromDocuments([document]);
+  const retriever = index.asRetriever({
+    similarityTopK: 5,
+  });
+
+  // Create a chat engine
+  const chatEngine = new ContextChatEngine({ retriever });
+  const rl = createInterface({ input, output });
+
+  console.log("Chat with your document! (Ctrl+C to exit)\n");
+
+  while (true) {
+    const query = await rl.question("You: ");
+    const stream = await chatEngine.chat({ message: query, stream: true });
+
+    process.stdout.write("Assistant: ");
+    for await (const chunk of stream) {
+      process.stdout.write(chunk.response);
+    }
+    console.log("\n");
+  }
+}
+
+main().catch(console.error);
+```
+
+This creates a conversational interface that maintains context across multiple questions!
+
+## Building an Agent with Tools
+
+For more advanced use cases, create an agent that can use tools:
+
+```typescript agent.ts
+import { openai } from "@llamaindex/openai";
+import { agent } from "@llamaindex/workflow";
+import { tool } from "llamaindex";
+import { z } from "zod";
+
+// Define a tool
+const weatherTool = tool({
+  name: "get_weather",
+  description: "Get the current weather for a location",
+  parameters: z.object({
+    address: z.string().describe("The address"),
+  }),
+  execute: ({ address }) => `${address} is sunny and 72°F!`,
+});
+
+async function main() {
+  // Create an agent with tools
+  const weatherAgent = agent({
+    llm: openai({
+      model: "gpt-4o",
+    }),
+    tools: [weatherTool],
+  });
+
+  // Run the agent
+  const result = await weatherAgent.run(
+    "What's the weather like in San Francisco?"
+  );
+
+  console.log(result.data.message);
+}
+
+main().catch(console.error);
+```
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  Agents require the `@llamaindex/workflow` package for orchestration:
+  ```bash
+  npm install @llamaindex/workflow
+  ```
 </Note>
+
+## What's Happening?
+
+Here's what happens under the hood:
+
+<Steps>
+  <Step title="Document Processing">
+    Your text is split into chunks (nodes) for efficient retrieval.
+  </Step>
+  <Step title="Embedding Generation">
+    Each chunk is converted into a vector embedding using OpenAI's embedding model.
+  </Step>
+  <Step title="Index Creation">
+    Embeddings are stored in a vector index for semantic search.
+  </Step>
+  <Step title="Query & Retrieval">
+    When you ask a question, relevant chunks are retrieved based on semantic similarity.
+  </Step>
+  <Step title="Response Generation">
+    The LLM generates a response using the retrieved context.
+  </Step>
+</Steps>
+
+## Next Steps
+
+Now that you've built your first RAG application, explore more features:
+
+<CardGroup cols={2}>
+  <Card title="Installation Guide" icon="download" href="/installation">
+    Learn about runtime-specific setup and provider packages
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/concepts">
+    Deep dive into Documents, Nodes, Indices, and more
+  </Card>
+  <Card title="Vector Stores" icon="database" href="/vector-stores">
+    Use production vector databases like Pinecone, Qdrant, or Chroma
+  </Card>
+  <Card title="Agents" icon="robot" href="/agents">
+    Build sophisticated agents with reasoning and tool usage
+  </Card>
+</CardGroup>
+
+## Try It Online
+
+Want to experiment without setup? Try our examples in StackBlitz:
+
+[![Open in Stackblitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/run-llama/LlamaIndexTS/tree/main/examples)

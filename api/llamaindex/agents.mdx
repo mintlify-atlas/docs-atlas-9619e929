@@ -1,0 +1,127 @@
+---
+title: "Agents (Deprecated)"
+description: "Legacy agent implementations - use @llamaindex/workflow instead"
+icon: "triangle-exclamation"
+---
+
+<Warning>
+  The agent implementations in `llamaindex/agent` are deprecated. Use `@llamaindex/workflow` for building agentic workflows.
+</Warning>
+
+## Migration Guide
+
+Instead of using `ReActAgent`, migrate to workflow-based agents:
+
+### Before (Deprecated)
+
+```typescript
+import { ReActAgent } from "llamaindex/agent";
+import { OpenAI } from "@llamaindex/openai";
+
+const agent = new ReActAgent({
+  llm: new OpenAI({ model: "gpt-4" }),
+  tools: [weatherTool, calculatorTool]
+});
+
+const response = await agent.chat({ message: "What's the weather?" });
+```
+
+### After (Recommended)
+
+```typescript
+import { Workflow, StartEvent, StopEvent } from "@llamaindex/workflow";
+import { OpenAI } from "@llamaindex/openai";
+
+class AgentWorkflow extends Workflow {
+  async run(ctx: Context, ev: StartEvent) {
+    const llm = new OpenAI({ model: "gpt-4" });
+    
+    const response = await llm.chat({
+      messages: [{ role: "user", content: ev.message }],
+      tools: [weatherTool, calculatorTool]
+    });
+    
+    return new StopEvent({ result: response });
+  }
+}
+
+const workflow = new AgentWorkflow();
+const result = await workflow.run({ message: "What's the weather?" });
+```
+
+## Legacy Documentation
+
+### ReActAgent
+
+Reasoning and Acting agent that uses tools to solve problems.
+
+```typescript
+import { ReActAgent } from "llamaindex/agent";
+import { tool } from "@llamaindex/core/tools";
+import { z } from "zod";
+
+const weatherTool = tool({
+  name: "get_weather",
+  description: "Get weather for a location",
+  parameters: z.object({
+    location: z.string()
+  }),
+  execute: async ({ location }) => {
+    return `Weather in ${location}: 72°F`;
+  }
+});
+
+const agent = new ReActAgent({
+  tools: [weatherTool],
+  verbose: true
+});
+```
+
+### Constructor Options
+
+<ParamField path="llm" type="LLM">
+  Language model (defaults to Settings.llm)
+</ParamField>
+
+<ParamField path="tools" type="BaseTool[]" required>
+  Array of tools the agent can use
+</ParamField>
+
+<ParamField path="verbose" type="boolean" default={false}>
+  Whether to log reasoning steps
+</ParamField>
+
+<ParamField path="maxIterations" type="number" default={10}>
+  Maximum reasoning iterations
+</ParamField>
+
+### Methods
+
+<ParamField path="chat" type="method">
+  Chat with the agent
+  
+  ```typescript
+  chat(params: { message: string }): Promise<AgentChatResponse>
+  ```
+</ParamField>
+
+<ParamField path="reset" type="method">
+  Reset agent memory
+  
+  ```typescript
+  reset(): void
+  ```
+</ParamField>
+
+## Why Migrate?
+
+1. **More Flexible**: Workflows provide fine-grained control over agent behavior
+2. **Better Streaming**: Built-in support for streaming events
+3. **Composable**: Easily combine multiple workflows
+4. **State Management**: Explicit state handling with Context
+5. **Active Development**: Workflows are actively maintained
+
+## See Also
+
+- [Workflow Overview](/api/workflow/overview)
+- [Building Agents with Workflows](https://docs.llamaindex.ai/en/stable/examples/agent/)

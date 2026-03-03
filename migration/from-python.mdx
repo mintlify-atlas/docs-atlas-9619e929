@@ -1,0 +1,290 @@
+---
+title: "Migrating from Python"
+description: "Guide for migrating from LlamaIndex Python to LlamaIndex.TS"
+---
+
+LlamaIndex.TS is the TypeScript/JavaScript port of LlamaIndex Python. While the core concepts remain the same, there are important differences in implementation and API design.
+
+## Key Differences
+
+### Language & Type System
+
+**Python:**
+- Dynamic typing (with optional type hints)
+- Duck typing and runtime flexibility
+- Python-specific features (decorators, context managers)
+
+**TypeScript:**
+- Static typing with full TypeScript support
+- Compile-time type checking
+- Modern JavaScript/TypeScript patterns
+
+### Runtime Environment Support
+
+LlamaIndex.TS is designed to work across multiple JavaScript runtimes:
+
+- Node.js >= 18.0.0
+- Deno
+- Bun
+- Vercel Edge Runtime
+- Cloudflare Workers
+- Nitro
+
+<Note>
+Browser support is currently limited due to the lack of AsyncLocalStorage-like APIs.
+</Note>
+
+## Package Structure
+
+### Python
+
+```python
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
+from llama_index.llms.openai import OpenAI
+from llama_index.embeddings.openai import OpenAIEmbedding
+```
+
+### TypeScript
+
+```typescript
+import { VectorStoreIndex, SimpleDirectoryReader } from "llamaindex";
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+```
+
+**Key Differences:**
+- LlamaIndex.TS uses a modular package structure with provider-specific packages
+- Install only what you need: `npm install llamaindex @llamaindex/openai`
+- Core functionality in `llamaindex`, providers in `@llamaindex/*` packages
+
+## API Mapping
+
+### Settings Configuration
+
+<CodeGroup>
+```python Python
+from llama_index.core import Settings
+from llama_index.llms.openai import OpenAI
+from llama_index.embeddings.openai import OpenAIEmbedding
+
+Settings.llm = OpenAI(model="gpt-4")
+Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small")
+```
+
+```typescript TypeScript
+import { Settings } from "llamaindex";
+import { OpenAI, OpenAIEmbedding } from "@llamaindex/openai";
+
+Settings.llm = new OpenAI({ model: "gpt-4" });
+Settings.embedModel = new OpenAIEmbedding({ model: "text-embedding-3-small" });
+```
+</CodeGroup>
+
+### Document Loading
+
+<CodeGroup>
+```python Python
+from llama_index.core import SimpleDirectoryReader
+
+reader = SimpleDirectoryReader("./data")
+documents = reader.load_data()
+```
+
+```typescript TypeScript
+import { SimpleDirectoryReader } from "llamaindex";
+
+const reader = new SimpleDirectoryReader();
+const documents = await reader.loadData({ directoryPath: "./data" });
+```
+</CodeGroup>
+
+### Creating an Index
+
+<CodeGroup>
+```python Python
+from llama_index.core import VectorStoreIndex
+
+index = VectorStoreIndex.from_documents(documents)
+```
+
+```typescript TypeScript
+import { VectorStoreIndex } from "llamaindex";
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+```
+</CodeGroup>
+
+### Query Engine
+
+<CodeGroup>
+```python Python
+query_engine = index.as_query_engine()
+response = query_engine.query("What is LlamaIndex?")
+print(response)
+```
+
+```typescript TypeScript
+const queryEngine = index.asQueryEngine();
+const response = await queryEngine.query({ query: "What is LlamaIndex?" });
+console.log(response.toString());
+```
+</CodeGroup>
+
+### Chat Engine
+
+<CodeGroup>
+```python Python
+chat_engine = index.as_chat_engine()
+response = chat_engine.chat("Hello!")
+print(response)
+```
+
+```typescript TypeScript
+const chatEngine = index.asChatEngine();
+const response = await chatEngine.chat({ message: "Hello!" });
+console.log(response.toString());
+```
+</CodeGroup>
+
+## Common Migration Patterns
+
+### Async/Await
+
+All I/O operations in TypeScript are async:
+
+```typescript
+// Always use await for I/O operations
+const documents = await reader.loadData({ directoryPath: "./data" });
+const index = await VectorStoreIndex.fromDocuments(documents);
+const response = await queryEngine.query({ query: "..." });
+```
+
+### Streaming Responses
+
+<CodeGroup>
+```python Python
+response = query_engine.query("What is LlamaIndex?")
+for token in response.response_gen:
+    print(token, end="")
+```
+
+```typescript TypeScript
+const stream = await queryEngine.query({
+  query: "What is LlamaIndex?",
+  stream: true,
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.response);
+}
+```
+</CodeGroup>
+
+### Custom Node Parsers
+
+<CodeGroup>
+```python Python
+from llama_index.core.node_parser import SentenceSplitter
+
+node_parser = SentenceSplitter(
+    chunk_size=512,
+    chunk_overlap=20,
+)
+nodes = node_parser.get_nodes_from_documents(documents)
+```
+
+```typescript TypeScript
+import { SentenceSplitter } from "llamaindex";
+
+const nodeParser = new SentenceSplitter({
+  chunkSize: 512,
+  chunkOverlap: 20,
+});
+const nodes = nodeParser.getNodesFromDocuments(documents);
+```
+</CodeGroup>
+
+### Vector Stores
+
+<CodeGroup>
+```python Python
+from llama_index.vector_stores.pinecone import PineconeVectorStore
+from llama_index.core import VectorStoreIndex
+
+vector_store = PineconeVectorStore(
+    index_name="my-index",
+    api_key="..."
+)
+
+index = VectorStoreIndex.from_documents(
+    documents,
+    vector_store=vector_store,
+)
+```
+
+```typescript TypeScript
+import { VectorStoreIndex } from "llamaindex";
+import { PineconeVectorStore } from "@llamaindex/pinecone";
+
+const vectorStore = new PineconeVectorStore({
+  indexName: "my-index",
+  apiKey: "...",
+});
+
+const index = await VectorStoreIndex.fromDocuments(documents, {
+  vectorStore,
+});
+```
+</CodeGroup>
+
+## Naming Conventions
+
+| Python | TypeScript |
+|--------|------------|
+| `snake_case` | `camelCase` |
+| `load_data()` | `loadData()` |
+| `as_query_engine()` | `asQueryEngine()` |
+| `get_nodes_from_documents()` | `getNodesFromDocuments()` |
+| `chunk_size` | `chunkSize` |
+| `embed_model` | `embedModel` |
+
+## Provider Packages
+
+Unlike Python where providers are organized as namespaces, TypeScript uses separate npm packages:
+
+```bash
+# LLMs
+npm install @llamaindex/openai
+npm install @llamaindex/anthropic
+npm install @llamaindex/ollama
+npm install @llamaindex/google
+
+# Vector Stores
+npm install @llamaindex/pinecone
+npm install @llamaindex/chroma
+npm install @llamaindex/qdrant
+npm install @llamaindex/weaviate
+
+# Readers
+npm install @llamaindex/readers
+```
+
+## Not Yet Implemented
+
+Some Python features are not yet available in TypeScript:
+
+- Some specialized readers and data connectors
+- Certain advanced query engines
+- Some evaluation metrics
+- GraphRAG components
+
+<Tip>
+Check the [GitHub repository](https://github.com/run-llama/LlamaIndexTS) for the latest features and roadmap.
+</Tip>
+
+## Getting Help
+
+If you're migrating from Python and need help:
+
+- Join our [Discord community](https://discord.com/invite/eN6D2HQ4aX)
+- Check [GitHub Discussions](https://github.com/run-llama/LlamaIndexTS/discussions)
+- Review the [examples](https://github.com/run-llama/LlamaIndexTS/tree/main/examples)

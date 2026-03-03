@@ -1,0 +1,385 @@
+---
+title: Installation
+description: Install and configure LlamaIndex.TS for your JavaScript runtime environment
+---
+
+# Installation
+
+LlamaIndex.TS is designed to work across multiple JavaScript runtime environments. This guide covers installation for all supported runtimes and package managers.
+
+## Quick Install
+
+For most Node.js projects, start with:
+
+<CodeGroup>
+  ```bash npm
+  npm install llamaindex
+  ```
+
+  ```bash pnpm
+  pnpm install llamaindex
+  ```
+
+  ```bash yarn
+  yarn add llamaindex
+  ```
+</CodeGroup>
+
+<Note>
+  The `llamaindex` package provides core functionality. You'll also need to install provider packages for LLMs, embeddings, and vector stores.
+</Note>
+
+## Runtime Requirements
+
+LlamaIndex.TS supports multiple JavaScript runtimes with different requirements:
+
+| Runtime | Minimum Version | Status |
+|---------|----------------|--------|
+| Node.js | >= 20.0.0 | ✅ Full Support |
+| Deno | Latest | ✅ Full Support |
+| Bun | Latest | ✅ Full Support |
+| Nitro | Latest | ✅ Full Support |
+| Vercel Edge | Latest | ✅ Limited Support |
+| Cloudflare Workers | Latest | ✅ Limited Support |
+| Browser | N/A | ⚠️ Limited (no AsyncLocalStorage) |
+
+<Warning>
+  Browser support is currently limited due to the lack of [AsyncLocalStorage-like APIs](https://github.com/tc39/proposal-async-context). Use edge runtimes for serverless deployments.
+</Warning>
+
+## Provider Packages
+
+LlamaIndex.TS uses a modular architecture. Install only the providers you need to keep your bundle size small.
+
+### LLM Providers
+
+Choose the LLM provider(s) you want to use:
+
+<Tabs>
+  <Tab title="OpenAI">
+    ```bash
+    npm install @llamaindex/openai
+    ```
+
+    Supports GPT-4, GPT-3.5, and OpenAI embeddings.
+
+    ```typescript
+    import { openai } from "@llamaindex/openai";
+
+    const llm = openai({ model: "gpt-4o" });
+    ```
+  </Tab>
+
+  <Tab title="Anthropic">
+    ```bash
+    npm install @llamaindex/anthropic
+    ```
+
+    Supports Claude 3.5 Sonnet, Opus, and other Claude models.
+
+    ```typescript
+    import { claude } from "@llamaindex/anthropic";
+
+    const llm = claude({ model: "claude-3-5-sonnet-20241022" });
+    ```
+  </Tab>
+
+  <Tab title="Google Gemini">
+    ```bash
+    npm install @llamaindex/gemini
+    ```
+
+    Supports Gemini Pro and other Google models.
+
+    ```typescript
+    import { Gemini } from "@llamaindex/gemini";
+
+    const llm = new Gemini({ model: "gemini-pro" });
+    ```
+  </Tab>
+
+  <Tab title="Other Providers">
+    Additional providers are available:
+
+    ```bash
+    # Groq
+    npm install @llamaindex/groq
+
+    # Ollama (local models)
+    npm install @llamaindex/ollama
+
+    # MistralAI
+    npm install @llamaindex/mistralai
+
+    # Fireworks
+    npm install @llamaindex/fireworks
+    ```
+  </Tab>
+</Tabs>
+
+### Vector Store Providers
+
+For production use, integrate with a vector database:
+
+<Tabs>
+  <Tab title="Pinecone">
+    ```bash
+    npm install @llamaindex/pinecone
+    ```
+
+    ```typescript
+    import { PineconeVectorStore } from "@llamaindex/pinecone";
+    import { Pinecone } from "@pinecone-database/pinecone";
+
+    const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
+    const pineconeIndex = pinecone.Index("my-index");
+
+    const vectorStore = new PineconeVectorStore({ pineconeIndex });
+    ```
+  </Tab>
+
+  <Tab title="Qdrant">
+    ```bash
+    npm install @llamaindex/qdrant
+    ```
+
+    ```typescript
+    import { QdrantVectorStore } from "@llamaindex/qdrant";
+
+    const vectorStore = new QdrantVectorStore({
+      url: process.env.QDRANT_URL,
+      apiKey: process.env.QDRANT_API_KEY,
+    });
+    ```
+  </Tab>
+
+  <Tab title="Chroma">
+    ```bash
+    npm install @llamaindex/chroma
+    ```
+
+    ```typescript
+    import { ChromaVectorStore } from "@llamaindex/chroma";
+
+    const vectorStore = new ChromaVectorStore({
+      url: "http://localhost:8000",
+    });
+    ```
+  </Tab>
+
+  <Tab title="Other Stores">
+    Additional vector stores:
+
+    ```bash
+    # Weaviate
+    npm install @llamaindex/weaviate
+
+    # MongoDB
+    npm install @llamaindex/mongodb
+
+    # PostgreSQL (with pgvector)
+    npm install @llamaindex/pg
+    ```
+  </Tab>
+</Tabs>
+
+## Runtime-Specific Setup
+
+### Node.js
+
+Node.js >= 20 is required for full AsyncLocalStorage support.
+
+```bash
+node --version  # Should be >= 20.0.0
+```
+
+Standard installation works out of the box:
+
+```bash
+npm install llamaindex @llamaindex/openai
+```
+
+### Deno
+
+LlamaIndex.TS works with Deno's npm compatibility:
+
+```typescript
+import { VectorStoreIndex, Document } from "npm:llamaindex";
+import { openai } from "npm:@llamaindex/openai";
+
+// Your code here
+```
+
+### Bun
+
+Bun has full support with its fast package manager:
+
+```bash
+bun add llamaindex @llamaindex/openai
+```
+
+Then use normally:
+
+```typescript
+import { VectorStoreIndex } from "llamaindex";
+```
+
+### Vercel Edge Runtime
+
+For Vercel Edge Functions, use the edge-compatible entry point:
+
+```typescript
+// This is automatically resolved when running in Vercel Edge
+import { VectorStoreIndex } from "llamaindex";
+
+export const config = {
+  runtime: "edge",
+};
+```
+
+<Warning>
+  Some features that require file system access may be limited in edge environments. Use remote vector stores for data persistence.
+</Warning>
+
+### Cloudflare Workers
+
+Cloudflare Workers automatically use the workerd-compatible entry point:
+
+```typescript
+import { VectorStoreIndex } from "llamaindex";
+
+export default {
+  async fetch(request: Request): Promise<Response> {
+    // Your LlamaIndex code
+  },
+};
+```
+
+## Environment Variables
+
+Set up your API keys and configuration:
+
+```bash .env
+# LLM Providers
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=...
+
+# Vector Stores
+PINECONE_API_KEY=...
+QDRANT_URL=https://...
+QDRANT_API_KEY=...
+
+# Optional: LlamaCloud
+LLAMA_CLOUD_API_KEY=...
+```
+
+<Tip>
+  Use a `.env` file for local development and configure environment variables in your deployment platform for production.
+</Tip>
+
+## Additional Packages
+
+### Workflow and Agents
+
+For building agentic applications:
+
+```bash
+npm install @llamaindex/workflow
+```
+
+### File Readers
+
+For reading different file formats:
+
+```bash
+# PDF support
+npm install @llamaindex/pdf-reader
+
+# DOCX support  
+npm install @llamaindex/docx-reader
+
+# Notion integration
+npm install @llamaindex/notion
+
+# Discord integration
+npm install @llamaindex/discord
+```
+
+### LlamaCloud
+
+For managed RAG with LlamaCloud:
+
+```bash
+npm install @llamaindex/cloud
+```
+
+## Verifying Installation
+
+Create a simple test file to verify everything works:
+
+```typescript test.ts
+import { Document } from "llamaindex";
+
+const doc = new Document({ text: "Hello, LlamaIndex!" });
+console.log("Installation successful!", doc.getText());
+```
+
+Run it:
+
+```bash
+npx tsx test.ts
+```
+
+If you see "Installation successful!", you're ready to go!
+
+## Troubleshooting
+
+### Module Resolution Errors
+
+If you encounter module resolution errors, ensure you're using Node.js >= 20:
+
+```bash
+nvm install 20
+nvm use 20
+```
+
+### TypeScript Configuration
+
+Add these settings to your `tsconfig.json`:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "target": "ES2022",
+    "lib": ["ES2022"]
+  }
+}
+```
+
+### API Key Issues
+
+If your API key isn't being recognized:
+
+1. Ensure `.env` is in your project root
+2. Install `dotenv` and load it:
+   ```typescript
+   import "dotenv/config";
+   ```
+3. Verify the key is set:
+   ```typescript
+   console.log(process.env.OPENAI_API_KEY);
+   ```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build your first RAG application
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/concepts">
+    Learn about Documents, Nodes, and Indices
+  </Card>
+</CardGroup>

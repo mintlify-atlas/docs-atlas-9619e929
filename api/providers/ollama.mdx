@@ -1,0 +1,317 @@
+---
+title: "Ollama"
+description: "Ollama local LLM provider integration"
+icon: "server"
+---
+
+## Overview
+
+The Ollama provider enables running open-source LLMs locally with LlamaIndex.TS. Ollama supports models like Llama, Mistral, CodeLlama, and more.
+
+## Installation
+
+```bash
+npm install @llamaindex/ollama
+```
+
+## Prerequisites
+
+1. Install Ollama: [https://ollama.ai](https://ollama.ai)
+2. Pull a model:
+
+```bash
+ollama pull llama3.2
+```
+
+## Basic Usage
+
+```typescript
+import { Ollama } from "@llamaindex/ollama";
+
+const llm = new Ollama({
+  model: "llama3.2"
+});
+
+const response = await llm.chat({
+  messages: [
+    { role: "user", content: "What is LlamaIndex?" }
+  ]
+});
+
+console.log(response.message.content);
+```
+
+## Constructor Options
+
+<ParamField path="model" type="string" required>
+  Model name (e.g., "llama3.2", "mistral", "codellama")
+</ParamField>
+
+<ParamField path="config" type="Partial<Config>">
+  Ollama client configuration
+  
+  <Expandable title="Config Options">
+    <ParamField path="host" type="string" default="http://localhost:11434">
+      Ollama server URL
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="options" type="Partial<Options>">
+  Model options
+  
+  <Expandable title="Options">
+    <ParamField path="temperature" type="number" default={0.7}>
+      Sampling temperature
+    </ParamField>
+    <ParamField path="top_p" type="number" default={0.9}>
+      Nucleus sampling
+    </ParamField>
+    <ParamField path="num_ctx" type="number" default={4096}>
+      Context window size
+    </ParamField>
+    <ParamField path="num_predict" type="number">
+      Maximum tokens to generate
+    </ParamField>
+    <ParamField path="repeat_penalty" type="number">
+      Penalty for repetition
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Popular Models
+
+### Llama 3.2
+
+```typescript
+const llm = new Ollama({ model: "llama3.2" });
+```
+
+### Mistral
+
+```typescript
+const llm = new Ollama({ model: "mistral" });
+```
+
+### CodeLlama
+
+```typescript
+const llm = new Ollama({ model: "codellama" });
+```
+
+### Phi-3
+
+```typescript
+const llm = new Ollama({ model: "phi3" });
+```
+
+## Streaming
+
+```typescript
+const stream = await llm.chat({
+  messages: [{ role: "user", content: "Tell me a story" }],
+  stream: true
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.delta);
+}
+```
+
+## Function Calling
+
+```typescript
+import { tool } from "@llamaindex/core/tools";
+import { z } from "zod";
+
+const calculatorTool = tool({
+  name: "calculator",
+  description: "Perform calculations",
+  parameters: z.object({
+    expression: z.string()
+  }),
+  execute: async ({ expression }) => {
+    return eval(expression).toString();
+  }
+});
+
+const llm = new Ollama({ model: "llama3.2" });
+
+const response = await llm.chat({
+  messages: [{ role: "user", content: "What is 42 * 17?" }],
+  tools: [calculatorTool]
+});
+```
+
+## Structured Output
+
+```typescript
+import { z } from "zod";
+
+const schema = z.object({
+  name: z.string(),
+  age: z.number(),
+  skills: z.array(z.string())
+});
+
+const result = await llm.exec({
+  messages: [{ role: "user", content: "Extract: John, 30, Python, TypeScript" }],
+  responseFormat: schema
+});
+
+console.log(result.object);
+```
+
+## Completion API
+
+```typescript
+const response = await llm.complete({
+  prompt: "Once upon a time",
+  stream: false
+});
+
+console.log(response.text);
+```
+
+## Custom Ollama Server
+
+```typescript
+const llm = new Ollama({
+  model: "llama3.2",
+  config: {
+    host: "http://custom-server:11434"
+  }
+});
+```
+
+## Model Options
+
+```typescript
+const llm = new Ollama({
+  model: "llama3.2",
+  options: {
+    temperature: 0.8,
+    top_p: 0.95,
+    num_ctx: 8192,
+    num_predict: 512,
+    repeat_penalty: 1.1
+  }
+});
+```
+
+## Embeddings
+
+```typescript
+import { OllamaEmbedding } from "@llamaindex/ollama";
+
+const embedModel = new OllamaEmbedding({
+  model: "llama3.2"
+});
+
+const embedding = await embedModel.getTextEmbedding(
+  "LlamaIndex is a data framework"
+);
+```
+
+## With LlamaIndex
+
+```typescript
+import { Settings, VectorStoreIndex, Document } from "llamaindex";
+import { Ollama, OllamaEmbedding } from "@llamaindex/ollama";
+
+Settings.llm = new Ollama({ model: "llama3.2" });
+Settings.embedModel = new OllamaEmbedding({ model: "llama3.2" });
+
+const documents = [
+  new Document({ text: "Document content..." })
+];
+
+const index = await VectorStoreIndex.fromDocuments(documents);
+const queryEngine = index.asQueryEngine();
+
+const response = await queryEngine.query({
+  query: "What is the document about?"
+});
+```
+
+## Available Models
+
+Pull models with `ollama pull <model>`:
+
+- **llama3.2**: Latest Llama 3.2
+- **llama3.1**: Llama 3.1 (8B, 70B, 405B)
+- **llama2**: Llama 2 (7B, 13B, 70B)
+- **mistral**: Mistral 7B
+- **mixtral**: Mixtral 8x7B
+- **codellama**: Code-specialized Llama
+- **phi3**: Microsoft Phi-3
+- **gemma**: Google Gemma
+- **qwen**: Alibaba Qwen
+
+See full list: [https://ollama.ai/library](https://ollama.ai/library)
+
+## Model Variants
+
+Models come in different sizes:
+
+```bash
+# Default (typically 7B-8B)
+ollama pull llama3.2
+
+# Specific size
+ollama pull llama3.1:70b
+ollama pull mistral:7b-instruct
+
+# Quantized versions (smaller, faster)
+ollama pull llama3.2:7b-q4_0
+```
+
+## Performance Tips
+
+1. **Choose appropriate model size**: Smaller models (7B) for faster inference, larger (70B+) for quality
+2. **Adjust context window**: Reduce `num_ctx` for faster responses
+3. **Use quantized models**: Q4_0, Q5_0 variants for reduced memory usage
+4. **GPU acceleration**: Ollama automatically uses GPU if available
+5. **Keep Ollama updated**: `ollama pull <model>` to update models
+
+## Troubleshooting
+
+### Ollama Not Running
+
+```bash
+# Start Ollama
+ollama serve
+```
+
+### Model Not Found
+
+```bash
+# Pull the model first
+ollama pull llama3.2
+```
+
+### Connection Error
+
+```typescript
+// Check Ollama is running on correct port
+const llm = new Ollama({
+  model: "llama3.2",
+  config: {
+    host: "http://localhost:11434"  // Default
+  }
+});
+```
+
+## Best Practices
+
+1. **Run locally for privacy**: All processing happens on your machine
+2. **Choose model wisely**: Balance quality vs speed/memory
+3. **Monitor resource usage**: Larger models need more RAM/VRAM
+4. **Use streaming**: Better UX for long responses
+5. **Cache models**: Models stay in memory for faster subsequent runs
+
+## See Also
+
+- [Ollama Documentation](https://ollama.ai/docs)
+- [Available Models](https://ollama.ai/library)
+- [Core LLM API](/api/core/llms)
