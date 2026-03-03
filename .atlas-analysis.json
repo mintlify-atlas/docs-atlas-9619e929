@@ -1,0 +1,201 @@
+{
+  "projectType": "framework",
+  "projectName": "LlamaIndex.TS",
+  "projectDescription": "Data framework for building LLM applications with TypeScript and JavaScript, featuring RAG, agents, and workflows.",
+  "theme": "palm",
+  "primaryColor": "#10A37F",
+  "lightColor": "#26D07C",
+  "darkColor": "#0D8B6B",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation",
+              "concepts"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "core/architecture",
+              "core/multi-runtime",
+              "core/settings",
+              "core/data-flow"
+            ]
+          },
+          {
+            "group": "Building with LlamaIndex",
+            "pages": [
+              "guides/rag",
+              "guides/agents",
+              "guides/workflows",
+              "guides/chat-engines",
+              "guides/query-engines"
+            ]
+          },
+          {
+            "group": "Data Management",
+            "pages": [
+              "data/documents",
+              "data/node-parsers",
+              "data/ingestion",
+              "data/readers",
+              "data/storage"
+            ]
+          },
+          {
+            "group": "Models & Embeddings",
+            "pages": [
+              "models/llms",
+              "models/embeddings",
+              "models/providers"
+            ]
+          },
+          {
+            "group": "Retrievers & Indices",
+            "pages": [
+              "retrievers/vector-store",
+              "retrievers/retriever-modes",
+              "indices/vector-index",
+              "indices/summary-index"
+            ]
+          },
+          {
+            "group": "Advanced Features",
+            "pages": [
+              "advanced/postprocessors",
+              "advanced/response-synthesizers",
+              "advanced/evaluation",
+              "advanced/memory"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Package",
+            "pages": [
+              "api/core/llms",
+              "api/core/embeddings",
+              "api/core/schema",
+              "api/core/node-parser",
+              "api/core/query-engine",
+              "api/core/chat-engine"
+            ]
+          },
+          {
+            "group": "Main Package",
+            "pages": [
+              "api/llamaindex/overview",
+              "api/llamaindex/agents",
+              "api/llamaindex/engines",
+              "api/llamaindex/indices",
+              "api/llamaindex/ingestion"
+            ]
+          },
+          {
+            "group": "LLM Providers",
+            "pages": [
+              "api/providers/openai",
+              "api/providers/anthropic",
+              "api/providers/ollama",
+              "api/providers/groq",
+              "api/providers/google",
+              "api/providers/mistral"
+            ]
+          },
+          {
+            "group": "Vector Stores",
+            "pages": [
+              "api/storage/pinecone",
+              "api/storage/chroma",
+              "api/storage/qdrant",
+              "api/storage/weaviate"
+            ]
+          },
+          {
+            "group": "Workflow & Tools",
+            "pages": [
+              "api/workflow/overview",
+              "api/workflow/events",
+              "api/tools/function-tools"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Examples",
+        "groups": [
+          {
+            "group": "Examples",
+            "pages": [
+              "examples/overview",
+              "examples/rag-basic",
+              "examples/agent-basic",
+              "examples/workflow-basic",
+              "examples/multimodal",
+              "examples/nextjs-integration"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Migration & Resources",
+        "groups": [
+          {
+            "group": "Migration Guides",
+            "pages": [
+              "migration/from-python",
+              "migration/version-upgrades",
+              "migration/deprecated-features"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "resources/troubleshooting",
+              "resources/community",
+              "resources/contributing",
+              "resources/faq"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Multi-runtime support (Node.js, Deno, Bun, Cloudflare Workers, Vercel Edge)",
+    "Retrieval-Augmented Generation (RAG) with vector stores",
+    "Agent and workflow orchestration",
+    "Modular provider system with 30+ integrations",
+    "Chat and query engines for conversational AI",
+    "Data ingestion pipelines with multiple readers",
+    "Embedding and LLM abstraction layer",
+    "Storage abstractions (vector, document, chat, KV stores)"
+  ],
+  "publicApiSurface": [
+    "llamaindex - Main package with aggregated functionality",
+    "@llamaindex/core - Base classes and interfaces",
+    "@llamaindex/workflow - Workflow orchestration API",
+    "@llamaindex/openai - OpenAI LLM and embeddings",
+    "@llamaindex/anthropic - Anthropic Claude integration",
+    "@llamaindex/ollama - Ollama local LLM support",
+    "VectorStoreIndex - Primary vector-based index",
+    "Settings - Global configuration management",
+    "ChatEngine - Conversational interface",
+    "QueryEngine - Document querying interface",
+    "Document - Core document class",
+    "SimpleNodeParser - Text chunking",
+    "RetrieverQueryEngine - Query with retrieval",
+    "CondenseQuestionChatEngine - Chat with context",
+    "IngestionPipeline - Data processing pipeline"
+  ]
+}
